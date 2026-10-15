@@ -5,6 +5,7 @@ Malcolm leverages the following excellent open source tools, among others:
 * [Arkime](https://arkime.com/) (formerly Moloch) - for PCAP file processing, browsing, searching, analysis, and carving/exporting. [Arkime](arkime.md#Arkime) consists of two main components:
     * [capture](https://github.com/arkime/arkime/tree/master/capture) - a tool for traffic capture and offline PCAP parsing with metadata insertion into OpenSearch
     * [viewer](https://github.com/arkime/arkime/tree/master/viewer) - a browser-based interface for data visualization and payload analysis
+    * Malcolm can also optionally run Arkime's [Cont3xt](arkime.md#ArkimeCont3xt) (for gathering context about indicators from third-party integrations) and [Parliament](arkime.md#ArkimeParliament) (for monitoring the health of Arkime clusters) tools
 * [OpenSearch](https://opensearch.org/) - a search and analytics engine for indexing and querying network traffic session metadata ([Elasticsearch](opensearch-instances.md#OpenSearchInstance) is also supported)
     * [OpenSearch Dashboards](https://opensearch.org/docs/latest/dashboards/index/) - for creating additional ad-hoc [visualizations, dashboards, and reports](dashboards.md#Dashboards) beyond those provided by Arkime Viewer ([Kibana](https://www.elastic.co/kibana) is also supported)
         * [Vega](https://vega.github.io/vega/) is used to create many of Malcolm's custom visualizations in Dashboards

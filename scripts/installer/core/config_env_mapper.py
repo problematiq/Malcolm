@@ -76,10 +76,12 @@ def _default_list_of_strings_reverse_transform(value: str) -> List[str]:
 _BOOLEAN_VARS = [
     KEY_ENV_ARKIME_ALLOW_WISE_CONFIG,
     KEY_ENV_ARKIME_AUTO_ANALYZE_PCAP_FILES,
+    KEY_ENV_ARKIME_CONT3XT_ENABLED,
     KEY_ENV_ARKIME_EXPOSE_WISE,
     KEY_ENV_ARKIME_INDEX_MANAGEMENT_ENABLED,
     KEY_ENV_ARKIME_INDEX_MANAGEMENT_HOT_WARM_ENABLED,
     KEY_ENV_ARKIME_MANAGE_PCAP_FILES,
+    KEY_ENV_ARKIME_PARLIAMENT_ENABLED,
     KEY_ENV_FILEBEAT_TCP_LISTEN,
     KEY_ENV_FREQ_LOOKUP,
     KEY_ENV_LOGSTASH_OUI_LOOKUP,
@@ -240,6 +242,14 @@ CUSTOM_TRANSFORM_HANDLERS: Dict[str, TransformHook] = {
     KEY_ENV_SURICATA_ROTATED_PCAP: TransformHook(
         forward=custom_transform_suricata_rotated_pcap,
         reverse=custom_reverse_transform_suricata_rotated_pcap,
+    ),
+    KEY_ENV_ARKIME_CONT3XT_ENABLED: TransformHook(
+        forward=custom_transform_service_disabled,
+        reverse=custom_reverse_transform_service_disabled,
+    ),
+    KEY_ENV_ARKIME_PARLIAMENT_ENABLED: TransformHook(
+        forward=custom_transform_service_disabled,
+        reverse=custom_reverse_transform_service_disabled,
     ),
     KEY_ENV_PIPELINE_ENABLED: TransformHook(
         forward=custom_transform_pipeline_enabled,
@@ -630,6 +640,10 @@ class EnvMapper:
                 KEY_CONFIG_ITEM_ARKIME_ALLOW_WISE_CONFIG
             ]
             self.env_var_by_map_key[KEY_ENV_ARKIME_WISE_URL].config_items = [KEY_CONFIG_ITEM_ARKIME_WISE_URL]
+            self.env_var_by_map_key[KEY_ENV_ARKIME_CONT3XT_ENABLED].config_items = [KEY_CONFIG_ITEM_ARKIME_CONT3XT]
+            self.env_var_by_map_key[KEY_ENV_ARKIME_PARLIAMENT_ENABLED].config_items = [
+                KEY_CONFIG_ITEM_ARKIME_PARLIAMENT
+            ]
 
             # Malcolm
             self.env_var_by_map_key[KEY_ENV_PGID].config_items = [KEY_CONFIG_ITEM_PROCESS_GROUP_ID]

@@ -9,7 +9,7 @@ LABEL org.opencontainers.image.documentation='https://github.com/idaholab/Malcol
 LABEL org.opencontainers.image.source='https://github.com/idaholab/Malcolm'
 LABEL org.opencontainers.image.vendor='Idaho National Laboratory'
 LABEL org.opencontainers.image.title='ghcr.io/idaholab/malcolm/arkime'
-LABEL org.opencontainers.image.description='Malcolm container providing Arkime'
+LABEL org.opencontainers.image.description='Malcolm container providing Arkime (including Cont3xt and Parliament)'
 
 ARG DEFAULT_UID=1000
 ARG DEFAULT_GID=1000
@@ -50,6 +50,9 @@ ARG WISE=on
 ARG VIEWER=on
 ARG ARKIME_SSL=true
 ARG ARKIME_VIEWER_PORT=8005
+# Cont3xt and Parliament are run by the same image as separate services
+ARG ARKIME_CONT3XT=false
+ARG ARKIME_PARLIAMENT=false
 #Whether or not Arkime is in charge of deleting old PCAP files to reclaim space
 ARG MANAGE_PCAP_FILES=false
 ARG ARKIME_PCAP_LIBPCAP=false
@@ -89,6 +92,8 @@ ENV WISE=$WISE
 ENV VIEWER=$VIEWER
 ENV ARKIME_SSL=$ARKIME_SSL
 ENV ARKIME_VIEWER_PORT=$ARKIME_VIEWER_PORT
+ENV ARKIME_CONT3XT=$ARKIME_CONT3XT
+ENV ARKIME_PARLIAMENT=$ARKIME_PARLIAMENT
 ENV MANAGE_PCAP_FILES=$MANAGE_PCAP_FILES
 ENV ARKIME_PCAP_LIBPCAP=$ARKIME_PCAP_LIBPCAP
 ENV AUTO_TAG=$AUTO_TAG
@@ -192,17 +197,19 @@ RUN groupadd --gid $DEFAULT_GID $PGROUP && \
     ln -sfr /usr/local/bin/pcap_processor.py /usr/local/bin/pcap_arkime_processor.py && \
     ln -sfr /usr/local/bin/arkime_update_geo.sh $ARKIME_DIR/bin/arkime_update_geo.sh && \
     mv $ARKIME_DIR/etc/config.ini $ARKIME_DIR/etc/config.orig.ini && \
+    mv $ARKIME_DIR/etc/cont3xt.ini $ARKIME_DIR/etc/cont3xt.orig.ini && \
+    mv $ARKIME_DIR/etc/parliament.ini $ARKIME_DIR/etc/parliament.orig.ini && \
     cp $ARKIME_DIR/bin/capture $ARKIME_DIR/bin/capture-offline && \
     chown root:${PGROUP} $ARKIME_DIR/bin/capture && \
       setcap 'CAP_NET_RAW+eip CAP_NET_ADMIN+eip CAP_IPC_LOCK+eip' $ARKIME_DIR/bin/capture && \
     chown root:${PGROUP} /sbin/ethtool && \
       setcap 'CAP_NET_RAW+eip CAP_NET_ADMIN+eip' /sbin/ethtool && \
-    mkdir -p /var/run/arkime $ARKIME_DIR/logs $ARKIME_DIR/parsers $ARKIME_DIR/lua && \
-    chown -R $PUSER:$PGROUP $ARKIME_DIR/etc $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/rules $ARKIME_DIR/logs /var/run/arkime
+    mkdir -p /var/run/arkime $ARKIME_DIR/logs $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/cont3xt-cache $ARKIME_DIR/parliament-data && \
+    chown -R $PUSER:$PGROUP $ARKIME_DIR/etc $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/rules $ARKIME_DIR/logs $ARKIME_DIR/cont3xt-cache $ARKIME_DIR/parliament-data /var/run/arkime
 #Update Path
 ENV PATH="/opt:$ARKIME_DIR/bin:${PATH}"
 
-EXPOSE 8000 8005 8081
+EXPOSE 3218 8000 8005 8008 8081
 WORKDIR $ARKIME_DIR
 
 ENTRYPOINT ["/usr/bin/tini", \

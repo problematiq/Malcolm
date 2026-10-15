@@ -830,6 +830,32 @@ DEPENDENCY_CONFIG: Dict[str, DependencySpec] = {
             only_if_unmodified=False,
         ),
     ),
+    KEY_CONFIG_ITEM_ARKIME_CONT3XT: DependencySpec(
+        visibility=VisibilityRule(
+            depends_on=[KEY_CONFIG_ITEM_MALCOLM_PROFILE, KEY_CONFIG_ITEM_AUTO_ARKIME],
+            condition=lambda profile, _auto_arkime: profile == PROFILE_MALCOLM,
+            ui_parent=KEY_CONFIG_ITEM_AUTO_ARKIME,
+        ),
+        value=ValueRule(
+            depends_on=KEY_CONFIG_ITEM_MALCOLM_PROFILE,
+            condition=lambda profile: (profile != PROFILE_MALCOLM),
+            default_value=False,
+            only_if_unmodified=False,
+        ),
+    ),
+    KEY_CONFIG_ITEM_ARKIME_PARLIAMENT: DependencySpec(
+        visibility=VisibilityRule(
+            depends_on=[KEY_CONFIG_ITEM_MALCOLM_PROFILE, KEY_CONFIG_ITEM_AUTO_ARKIME],
+            condition=lambda profile, _auto_arkime: profile == PROFILE_MALCOLM,
+            ui_parent=KEY_CONFIG_ITEM_AUTO_ARKIME,
+        ),
+        value=ValueRule(
+            depends_on=KEY_CONFIG_ITEM_MALCOLM_PROFILE,
+            condition=lambda profile: (profile != PROFILE_MALCOLM),
+            default_value=False,
+            only_if_unmodified=False,
+        ),
+    ),
     KEY_CONFIG_ITEM_ARKIME_WISE_URL: DependencySpec(
         visibility=VisibilityRule(
             depends_on=[

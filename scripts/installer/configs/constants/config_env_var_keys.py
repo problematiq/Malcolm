@@ -20,6 +20,12 @@ KEY_ENV_ARKIME_LIVE_COMP_LEVEL = "ARKIME_COMPRESSION_LEVEL"  # compression level
 KEY_ENV_ARKIME_ROTATED_PCAP = "ARKIME_ROTATED_PCAP"  # rotated captured PCAP analysis with Arkime (not live capture)
 KEY_ENV_ARKIME_EXPOSE_WISE = "ARKIME_EXPOSE_WISE_GUI"  # Controls whether the WISE configuration GUI is exposed (both internally and as an endpoint via the nginx proxy)
 KEY_ENV_ARKIME_ALLOW_WISE_CONFIG = "ARKIME_ALLOW_WISE_GUI_CONFIG"  # Controls whether the WISE configuration GUI is read-only (false) or editable (true)
+KEY_ENV_ARKIME_CONT3XT_ENABLED = (
+    "CONT3XT_DISABLED"  # Arkime Cont3xt DISABLED (note that this is boolean is reversed from the installer logic)
+)
+KEY_ENV_ARKIME_PARLIAMENT_ENABLED = (
+    "PARLIAMENT_DISABLED"  # Arkime Parliament DISABLED (note that this is boolean is reversed from the installer logic)
+)
 KEY_ENV_ARKIME_WISE_URL = (
     "ARKIME_WISE_SERVICE_URL"  # Used when for the Arkime WISE plugin if Arkime is performing live capture
 )

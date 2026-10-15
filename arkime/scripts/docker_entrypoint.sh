@@ -31,6 +31,11 @@ ARKIME_WISE_CONFIG_PIN_CODE=${ARKIME_WISE_CONFIG_PIN_CODE:-"WISE2019"}
 ARKIME_WISE_EXAMPLE_FILE="${ARKIME_DIR}"/etc/wise.ini.example
 ARKIME_WISE_CONFIG_FILE="${ARKIME_DIR}"/wiseini/wise.ini
 ARKIME_WISE_SERVICE_SCRIPT=/usr/local/bin/wise_service.sh
+ARKIME_CONT3XT=${ARKIME_CONT3XT:-"false"}
+ARKIME_PARLIAMENT=${ARKIME_PARLIAMENT:-"false"}
+[[ "$ARKIME_CONT3XT" == "true" ]] || [[ "$ARKIME_PARLIAMENT" == "true" ]] && ARKIME_APP_CONTAINER=true || ARKIME_APP_CONTAINER=false
+ARKIME_CONT3XT_CONFIG_FILE="${ARKIME_DIR}"/etc/cont3xt.ini
+ARKIME_PARLIAMENT_CONFIG_FILE="${ARKIME_DIR}"/etc/parliament.ini
 
 MALCOLM_PROFILE=${MALCOLM_PROFILE:-"malcolm"}
 OPENSEARCH_URL_FINAL=${OPENSEARCH_URL:-"https://opensearch:9200"}
@@ -262,6 +267,86 @@ if [[ ! -f "${ARKIME_CONFIG_FILE}" ]] && [[ -r "${ARKIME_DIR}"/etc/config.orig.i
 fi 
 
 
+# Cont3xt and Parliament run from this image as their own services (see ARKIME_CONT3XT
+#   and ARKIME_PARLIAMENT). Their .ini files are generated from templates the same way
+#   config.ini is above, sharing the users database and nginx header authentication.
+function ConfigureArkimeApp() {
+    local ORIG_FILE="$1"
+    local CONFIG_FILE="$2"
+    local DB_KEY="$3"
+    local ADMIN_ROLE="$4"
+    local USER_ROLE="$5"
+
+    if [[ -f "${CONFIG_FILE}" ]] || [[ ! -r "${ORIG_FILE}" ]]; then
+        return
+    fi
+    cp "${ORIG_FILE}" "${CONFIG_FILE}"
+
+    sed -i "s|^\(${DB_KEY}=\).*|\1"${OPENSEARCH_URL_FINAL}"|" "${CONFIG_FILE}"
+    sed -i "s/^\(passwordSecret=\).*/\1"${ARKIME_PASSWORD_SECRET}"/" "${CONFIG_FILE}"
+
+    # certFile/keyFile is cleared based on ARKIME_SSL, or overridden via ARKIME_CERTFILE/ARKIME_KEYFILE
+    [[ "${ARKIME_SSL:-true}" == "false" ]] && \
+      ( sed -r -i "s/(certFile)\s*=\s*.*/\1=/" "${CONFIG_FILE}" ; sed -r -i "s/(keyFile)\s*=\s*.*/\1=/" "${CONFIG_FILE}" )
+    [[ -n "$ARKIME_CERTFILE" ]] && \
+      sed -r -i "s/(certFile)\s*=\s*.*/\1=$ARKIME_CERTFILE/" "${CONFIG_FILE}"
+    [[ -n "$ARKIME_KEYFILE" ]] && \
+      sed -r -i "s/(keyFile)\s*=\s*.*/\1=$ARKIME_KEYFILE/" "${CONFIG_FILE}"
+
+    # use the same user auto-creation template as the viewer so a user's first visit to any
+    #   of the Arkime tools creates the same user document
+    TMPL_FILE="$(mktemp)"
+    APP_CONFIG_TMP_FILE="$(mktemp)"
+    if grep -m 1 '^userAutoCreateTmpl=' "${ARKIME_DIR}"/etc/config.orig.ini > "${TMPL_FILE}"; then
+      awk '
+          FNR==NR { tmpl = $0; next }
+          { print }
+          /^userNameHeader=/ { print tmpl }
+      ' "${TMPL_FILE}" "${CONFIG_FILE}" > "${APP_CONFIG_TMP_FILE}" && cat "${APP_CONFIG_TMP_FILE}" > "${CONFIG_FILE}"
+    fi
+    rm -f "${TMPL_FILE}" "${APP_CONFIG_TMP_FILE}"
+
+    # access to these tools is controlled by nginx based on URI path (see nginx/lua/nginx_auth_helpers.lua),
+    #   so any user who gets this far is granted the user role. The admin role goes to users with ROLE_ADMIN
+    #   or ROLE_ARKIME_ADMIN, which (when RBAC is not enabled) is everyone.
+    ADMIN_ROLE_NAMES=()
+    [[ -n "$ROLE_ADMIN" ]] && ADMIN_ROLE_NAMES+=( "'$ROLE_ADMIN'" )
+    [[ -n "$ROLE_ARKIME_ADMIN" ]] && ADMIN_ROLE_NAMES+=( "'$ROLE_ARKIME_ADMIN'" )
+    echo -e "\n[user-role-mappings]" >> "${CONFIG_FILE}"
+    echo "${USER_ROLE}=true" >> "${CONFIG_FILE}"
+    if (( ${#ADMIN_ROLE_NAMES[@]} > 0 )); then
+      echo "${ADMIN_ROLE}=(vals['x-forwarded-roles'] || '').split(',').map(s => s.trim()).some(r => [$(IFS=,; echo "${ADMIN_ROLE_NAMES[*]}")].includes(r))" >> "${CONFIG_FILE}"
+    fi
+
+    chmod 600 "${CONFIG_FILE}" || true
+    [[ -n ${PUID} ]] && chown -f ${PUID} "${CONFIG_FILE}" || true
+    [[ -n ${PGID} ]] && chown -f :${PGID} "${CONFIG_FILE}" || true
+}
+
+if [[ "$ARKIME_APP_CONTAINER" == "true" ]]; then
+    [[ "$ARKIME_CONT3XT" == "true" ]] && \
+      ConfigureArkimeApp "${ARKIME_DIR}"/etc/cont3xt.orig.ini "${ARKIME_CONT3XT_CONFIG_FILE}" elasticsearch cont3xtAdmin cont3xtUser
+    [[ "$ARKIME_PARLIAMENT" == "true" ]] && \
+      ConfigureArkimeApp "${ARKIME_DIR}"/etc/parliament.orig.ini "${ARKIME_PARLIAMENT_CONFIG_FILE}" usersElasticsearch parliamentAdmin parliamentUser
+
+    # initarkime.sh (which creates the viewer's certificates) doesn't run in these containers
+    if [[ "${ARKIME_SSL:-true}" != "false" ]] && [[ -z "$ARKIME_CERTFILE" ]] && [[ -z "$ARKIME_KEYFILE" ]]; then
+      CERT_FILE="${ARKIME_DIR}"/etc/viewer.crt
+      KEY_FILE="${ARKIME_DIR}"/etc/viewer.key
+      if ( [[ ! -f "$CERT_FILE" ]] || [[ ! -f "$KEY_FILE" ]] ) && [[ -x /usr/local/bin/self_signed_key_gen.sh ]]; then
+        rm -rf "$CERT_FILE" "$KEY_FILE" "${ARKIME_DIR}"/etc/newcerts
+        pushd "${ARKIME_DIR}"/etc/ >/dev/null 2>&1
+        /usr/local/bin/self_signed_key_gen.sh -n -o ./newcerts >/dev/null 2>&1
+        mv ./newcerts/server.crt "$CERT_FILE"
+        mv ./newcerts/server.key "$KEY_FILE"
+        rm -rf ./newcerts
+        popd >/dev/null 2>&1
+        [[ -n ${PUID} ]] && chown -f ${PUID} "$CERT_FILE" "$KEY_FILE" || true
+        [[ -n ${PGID} ]] && chown -f :${PGID} "$CERT_FILE" "$KEY_FILE" || true
+      fi
+    fi
+fi
+
 # An example wise.ini file is baked into the container image by the Dockerfile as $ARKIME_DIR/etc/wise.ini.example
 # After the container is booted we copy wise.ini.example from $ARKIME_DIR/etc/ to $ARKIME_DIR/wiseini/
 # if $ARKIME_DIR/wiseini/wise.ini does not already exist.
@@ -269,7 +354,7 @@ fi
 # $ARKIME_DIR/wiseini/ will be a persistent volume when run under Kubernetes.
 # This allows changes to persist when the wise application edits its own ini file at runtime.
 
-if [[ -r "${ARKIME_WISE_EXAMPLE_FILE}" ]] && [[ "$LIVE_CAPTURE" == "false" ]]; then
+if [[ -r "${ARKIME_WISE_EXAMPLE_FILE}" ]] && [[ "$LIVE_CAPTURE" == "false" ]] && [[ "$ARKIME_APP_CONTAINER" == "false" ]]; then
   if [[ ! -f "${ARKIME_WISE_CONFIG_FILE}" ]]; then
       cp "${ARKIME_WISE_EXAMPLE_FILE}" "${ARKIME_WISE_CONFIG_FILE}"
   elif [[ ! -s "${ARKIME_WISE_CONFIG_FILE}" ]]; then
@@ -283,7 +368,8 @@ if [[  -d "${ARKIME_DIR}/wiseini" ]]; then
   [[ -n ${PGID} ]] && chown -fR :${PGID} "${ARKIME_DIR}/wiseini" || true
 fi
 
-if [[ "${ARKIME_EXPOSE_WISE_GUI}"  == "true" ]]; then
+# WISE isn't run in the cont3xt or parliament containers
+if [[ "${ARKIME_EXPOSE_WISE_GUI}"  == "true" ]] && [[ "$ARKIME_APP_CONTAINER" == "false" ]]; then
   sed "s|^\(elasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|" "${ARKIME_WISE_CONFIG_FILE}" > ./wise.tmp
   sed -i "s|^\(wiseHost=\).*|\1""0.0.0.0""|" ./wise.tmp
   if [[ "$MALCOLM_PROFILE" == "hedgehog" ]] || [[ "$LIVE_CAPTURE" == "true" ]]; then

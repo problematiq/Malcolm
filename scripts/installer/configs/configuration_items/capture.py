@@ -16,7 +16,9 @@ from scripts.malcolm_utils import get_hostname_without_domain
 from scripts.installer.core.config_item import ConfigItem, ListOfStringsConfigItem
 from scripts.installer.configs.constants.configuration_item_keys import (
     KEY_CONFIG_ITEM_ARKIME_ALLOW_WISE_CONFIG,
+    KEY_CONFIG_ITEM_ARKIME_CONT3XT,
     KEY_CONFIG_ITEM_ARKIME_EXPOSE_WISE,
+    KEY_CONFIG_ITEM_ARKIME_PARLIAMENT,
     KEY_CONFIG_ITEM_ARKIME_WISE_URL,
     KEY_CONFIG_ITEM_CAPTURE_STATS,
     KEY_CONFIG_ITEM_EXTRA_TAGS,
@@ -127,6 +129,24 @@ CONFIG_ITEM_ARKIME_ALLOW_WISE_CONFIG = ConfigItem(
     default_value=False,
     validator=lambda x: isinstance(x, bool),
     question="Allow Arkime's WISE settings to be modified via the interface?",
+    widget_type=WidgetType.CHECKBOX,
+)
+
+CONFIG_ITEM_ARKIME_CONT3XT = ConfigItem(
+    key=KEY_CONFIG_ITEM_ARKIME_CONT3XT,
+    label="Enable Arkime Cont3xt",
+    default_value=False,
+    validator=lambda x: isinstance(x, bool),
+    question="Enable Arkime's Cont3xt service for gathering context about indicators?",
+    widget_type=WidgetType.CHECKBOX,
+)
+
+CONFIG_ITEM_ARKIME_PARLIAMENT = ConfigItem(
+    key=KEY_CONFIG_ITEM_ARKIME_PARLIAMENT,
+    label="Enable Arkime Parliament",
+    default_value=False,
+    validator=lambda x: isinstance(x, bool),
+    question="Enable Arkime's Parliament service for monitoring Arkime clusters?",
     widget_type=WidgetType.CHECKBOX,
 )
 

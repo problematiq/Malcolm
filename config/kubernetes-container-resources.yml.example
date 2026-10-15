@@ -13,6 +13,11 @@ arkime-live:
     requests:
       cpu: "2"
       memory: "4Gi"
+cont3xt:
+  resources:
+    requests:
+      cpu: "0.5"
+      memory: "512Mi"
 dashboards:
   resources:
     requests:
@@ -68,6 +73,11 @@ opensearch:
     requests:
       cpu: "4"
       memory: "24Gi"
+parliament:
+  resources:
+    requests:
+      cpu: "0.25"
+      memory: "256Mi"
 pcap-capture:
   resources:
     requests:

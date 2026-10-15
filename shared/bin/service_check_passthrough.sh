@@ -106,6 +106,18 @@ if [[ -z "$SERVICE" ]]; then
     fi
 fi
 
+# the arkime image also provides the cont3xt and parliament services, which are opt-in
+#   (disabled unless explicitly enabled)
+if [[ "$SERVICE" == "arkime" ]]; then
+    if [[ "${ARKIME_CONT3XT:-false}" == "true" ]]; then
+        SERVICE=cont3xt
+        CONT3XT_DISABLED=${CONT3XT_DISABLED:-true}
+    elif [[ "${ARKIME_PARLIAMENT:-false}" == "true" ]]; then
+        SERVICE=parliament
+        PARLIAMENT_DISABLED=${PARLIAMENT_DISABLED:-true}
+    fi
+fi
+
 # if disabled wasn't specified, but service was, check environment variables
 if [[ "$DISABLED" == "0" ]] && [[ -n "$SERVICE" ]]; then
 
@@ -144,6 +156,8 @@ if [[ -n "$SERVICE" ]]; then
             PORT=5000
         elif [[ "$SERVICE" == "arkime" ]]; then
             PORT=8005
+        elif [[ "$SERVICE" == "cont3xt" ]]; then
+            PORT=3218
         elif [[ "$SERVICE" == "dashboards" ]]; then
             PORT=5601
         elif [[ "$SERVICE" == "dashboards-helper" ]]; then
@@ -160,6 +174,8 @@ if [[ -n "$SERVICE" ]]; then
             PORT=8080
         elif [[ "$SERVICE" == "opensearch" ]]; then
             PORT=9200
+        elif [[ "$SERVICE" == "parliament" ]]; then
+            PORT=8008
         fi
     fi
     [[ -z "$FORMAT" ]] && \

@@ -107,6 +107,16 @@ def custom_reverse_transform_pipeline_enabled(value: str) -> bool:
     return not _env_str_to_bool(value)
 
 
+def custom_transform_service_disabled(enabled: bool) -> str:
+    """Forward transform for *_DISABLED env vars backed by an "enabled" config item."""
+    return true_or_false_no_quotes(not enabled)
+
+
+def custom_reverse_transform_service_disabled(value: str) -> bool:
+    """Reverse transform for *_DISABLED env vars backed by an "enabled" config item."""
+    return not _env_str_to_bool(value)
+
+
 def custom_transform_filebeat_syslog_tcp_listen(tcp_port: int) -> str:
     return true_or_false_no_quotes(tcp_port is not None and tcp_port > 0)
 

@@ -57,9 +57,11 @@ _base_config +CAPTURE_FLAG:
   tee "${JQ_FILE}" >/dev/null <<EOF
     .configuration.runtimeBin = "${MALCOLM_CONTAINER_RUNTIME:-docker}"
     | .configuration.arkimeAllowWiseConfig = ${ARKIME_ALLOW_WISE_GUI_CONFIG:-false}
+    | .configuration.arkimeCont3xt = ${ARKIME_CONT3XT_ENABLED:-false}
     | .configuration.arkimeExposeWise = ${ARKIME_EXPOSE_WISE_GUI:-false}
     | .configuration.arkimeFreeSpaceG = "${DELETE_PCAP_THRESHOLD:-1%}"
     | .configuration.arkimeManagePCAP = ${DELETE_OLD_PCAP:-false}
+    | .configuration.arkimeParliament = ${ARKIME_PARLIAMENT_ENABLED:-false}
     | .configuration.arkimeWiseUrl = "${ARKIME_WISE_SERVICE_URL:-http://arkime:8081}"
     | .configuration.autoArkime = ${AUTO_ARKIME:-true}
     | .configuration.autoFreq = ${AUTO_FREQ:-true}

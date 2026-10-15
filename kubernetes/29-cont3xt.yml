@@ -1,0 +1,92 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cont3xt
+  namespace: malcolm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3218
+      protocol: TCP
+      name: http
+  selector:
+    app: cont3xt
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cont3xt-deployment
+  namespace: malcolm
+  labels:
+    app: cont3xt
+    role: service
+spec:
+  selector:
+    matchLabels:
+      app: cont3xt
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: cont3xt
+        role: service
+    spec:
+      containers:
+      - name: cont3xt-container
+        image: ghcr.io/idaholab/malcolm/arkime:26.09.0
+        imagePullPolicy: Always
+        stdin: false
+        tty: true
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 3218
+        envFrom:
+          - configMapRef:
+              name: process-env
+          - configMapRef:
+              name: ssl-env
+          - configMapRef:
+              name: opensearch-env
+          - configMapRef:
+              name: upload-common-env
+          - configMapRef:
+              name: auth-common-env
+          - configMapRef:
+              name: arkime-env
+          - secretRef:
+              name: arkime-secret-env
+        env:
+          # the arkime image runs cont3xt rather than capture/viewer/WISE
+          - name: ARKIME_CONT3XT
+            value: "true"
+          - name: ARKIME_PCAP_PROCESSOR
+            value: "false"
+          - name: VIEWER
+            value: "off"
+          - name: WISE
+            value: "off"
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/container_health.sh
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 10
+        volumeMounts:
+          - mountPath: /var/local/ca-trust/configmap
+            name: cont3xt-var-local-catrust-volume
+          - mountPath: /var/local/curlrc/secretmap
+            name: cont3xt-opensearch-curlrc-secret-volume
+      terminationGracePeriodSeconds: 15
+      volumes:
+        - name: cont3xt-var-local-catrust-volume
+          configMap:
+            name: var-local-catrust
+        - name: cont3xt-opensearch-curlrc-secret-volume
+          secret:
+            secretName: opensearch-curlrc

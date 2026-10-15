@@ -178,6 +178,9 @@ check("dot to arkime hunts",               "/./arkime/api/hunts",        "/arkim
 check("dot to wise",                       "/./wise",                    "/wise")
 check("dot to wise config/save",           "/./wise/config/save",        "/wise/config/save")
 check("dot to wise source put",            "/./wise/source/x/put",       "/wise/source/x/put")
+-- cont3xt / parliament
+check("dot to cont3xt",                    "/./cont3xt/api/integration/search", "/cont3xt/api/integration/search")
+check("dot to parliament settings",        "/./parliament/api/settings", "/parliament/api/settings")
 -- netbox
 check("dot to netbox",                     "/./netbox",                  "/netbox")
 check("dot to netbox api",                 "/./netbox/api/dcim/",        "/netbox/api/dcim/")

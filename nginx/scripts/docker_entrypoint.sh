@@ -53,6 +53,12 @@ NGINX_HTADMIN_UPSTREAM_CONF=${NGINX_CONF_DIR}/nginx_htadmin_upstream.conf
 NGINX_ARKIME_WISE_LINK=${NGINX_CONF_DIR}/nginx_arkime_wise_rt.conf
 NGINX_ARKIME_WISE_CONF=${NGINX_CONF_DIR}/nginx_arkime_wise.conf
 
+# "include" files for Arkime Cont3xt and Parliament if enabled
+NGINX_ARKIME_CONT3XT_LINK=${NGINX_CONF_DIR}/nginx_arkime_cont3xt_rt.conf
+NGINX_ARKIME_CONT3XT_CONF=${NGINX_CONF_DIR}/nginx_arkime_cont3xt.conf
+NGINX_ARKIME_PARLIAMENT_LINK=${NGINX_CONF_DIR}/nginx_arkime_parliament_rt.conf
+NGINX_ARKIME_PARLIAMENT_CONF=${NGINX_CONF_DIR}/nginx_arkime_parliament.conf
+
 # "include" file for auth_ldap, prompt, and "auth_ldap_servers" name
 NGINX_LDAP_AUTH_CONF=${NGINX_CONF_DIR}/nginx_auth_ldap.conf
 
@@ -681,7 +687,18 @@ if [[ -f "${NGINX_LANDING_INDEX_HTML}" ]]; then
     NETBOX_DESC="Model and document your <a href=\"/readme/docs/asset-interaction-analysis.html\">network infrastructure</a>"
     NETBOX_LINK="/netbox/"
   fi
+  # Cont3xt has its own card on the landing page, Parliament gets a link on the Arkime card
+  [[ "${CONT3XT_DISABLED,,}" =~ ^(0|false|no|f|n)$ ]] && CONT3XT_ENABLED=true || CONT3XT_ENABLED=false
+  [[ "${PARLIAMENT_DISABLED,,}" =~ ^(0|false|no|f|n)$ ]] && \
+    ARKIME_APPS_DESC=" (see also: <a href=\"/parliament/\">Parliament</a>)" || \
+    ARKIME_APPS_DESC=""
   for HTML in "$(dirname "$(realpath "${NGINX_LANDING_INDEX_HTML}")")"/*.html; do
+    sed -i "s@MALCOLM_ARKIME_APPS_REPLACER@${ARKIME_APPS_DESC}@g" "${HTML}" || true
+    if [[ "$CONT3XT_ENABLED" == "true" ]]; then
+      sed -i '/MALCOLM_CONT3XT_CARD_\(BEGIN\|END\)/d' "${HTML}" || true
+    else
+      sed -i '/MALCOLM_CONT3XT_CARD_BEGIN/,/MALCOLM_CONT3XT_CARD_END/d' "${HTML}" || true
+    fi
     sed -i "s@MALCOLM_DASHBOARDS_NAME_REPLACER@${MALCOLM_DASHBOARDS_NAME}@g" "${HTML}" || true
     sed -i "s@MALCOLM_DASHBOARDS_URL_REPLACER@${MALCOLM_DASHBOARDS_URL}@g" "${HTML}" || true
     sed -i "s@MALCOLM_DASHBOARDS_ICON_REPLACER@${MALCOLM_DASHBOARDS_ICON}@g" "${HTML}" || true
@@ -699,6 +716,18 @@ if [[ "${ARKIME_EXPOSE_WISE_GUI:-true}"  == "true" ]]; then
   ln -sf "$NGINX_ARKIME_WISE_CONF" "$NGINX_ARKIME_WISE_LINK"
 else
   ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_WISE_LINK"
+fi
+
+if [[ "${CONT3XT_DISABLED,,}" =~ ^(0|false|no|f|n)$ ]]; then
+  ln -sf "$NGINX_ARKIME_CONT3XT_CONF" "$NGINX_ARKIME_CONT3XT_LINK"
+else
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_CONT3XT_LINK"
+fi
+
+if [[ "${PARLIAMENT_DISABLED,,}" =~ ^(0|false|no|f|n)$ ]]; then
+  ln -sf "$NGINX_ARKIME_PARLIAMENT_CONF" "$NGINX_ARKIME_PARLIAMENT_LINK"
+else
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_PARLIAMENT_LINK"
 fi
 
 # some cleanup, if necessary

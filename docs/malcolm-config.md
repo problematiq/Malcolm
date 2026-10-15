@@ -9,6 +9,8 @@ Although the configuration script automates many of the following configuration 
 * **`arkime.env`** and **`arkime-secret.env`** - settings for [Arkime](https://arkime.com/)
     - `ARKIME_DEBUG_LEVEL` - debug flag for Arkime's `config.ini` (see [Arkime settings](https://arkime.com/settings#debug)) (default `0`)
     - `ARKIME_PCAP_LIBPCAP` - if set to `true`, reverts to older `libpcap` mode for PCAP file processing rather than the faster `scheme` processing (default `false`)
+    - `CONT3XT_DISABLED` - if set to `false`, Malcolm will run [Arkime Cont3xt](arkime.md#ArkimeCont3xt), available at `https://<MALCOLM-IP>/cont3xt/` (default `true`)
+    - `PARLIAMENT_DISABLED` - if set to `false`, Malcolm will run [Arkime Parliament](arkime.md#ArkimeParliament), available at `https://<MALCOLM-IP>/parliament/` (default `true`)
     - `ARKIME_PASSWORD_SECRET` - the password hash secret for the Arkime viewer cluster (see `passwordSecret` in [Arkime INI Settings](https://arkime.com/settings)) used to secure the connection used when Arkime viewer retrieves a PCAP payload for display in its user interface
     - `ARKIME_ROTATE_INDEX` - how often (based on network traffic timestamp) to [create a new index](https://arkime.com/settings#rotateIndex) in OpenSearch
     - `ARKIME_QUERY_ALL_INDICES` - whether or not Arkime should [query all indices](https://arkime.com/settings#queryAllIndices) instead of trying to calculate which ones pertain to the search time frame (default `false`)

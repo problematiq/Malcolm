@@ -13,6 +13,8 @@
     - [Statistics](#ArkimeStats)
     - [Settings](#ArkimeSettings)
     - [WISE](#ArkimeWISE)
+    - [Cont3xt](#ArkimeCont3xt)
+    - [Parliament](#ArkimeParliament)
 
 
 ## <a name="ArkimeZeek"></a>Zeek log integration
@@ -195,3 +197,22 @@ See Arkime's documentation for additional information on leveraging the [WISE pl
 For more information on configuring WISE within Malcolm, see the [Arkime environment variables](malcolm-config.md#MalcolmConfigEnvVars).
 
 To leverage WISE when using a Hedgehog Linux, the sensor needs to be configured to request data from the WISE service. This can be setup during sensor configuration. See [Configuring Communication Between Hedgehog and Malcolm](malcolm-hedgehog-e2e-iso-install.md#HedgehogCommConfig) for more information.
+
+## <a name="ArkimeCont3xt"></a>Cont3xt
+
+[Cont3xt](https://arkime.com/cont3xt) is an Arkime tool that gathers context about indicators (IP addresses, domain names, URLs, email addresses, phone numbers, hashes, etc.) by querying third-party integrations such as VirusTotal, Shodan, PassiveTotal, and many others, all from a single interface.
+
+Cont3xt is disabled by default. To enable it, set `CONT3XT_DISABLED` to `false` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) (or select **Enable Arkime Cont3xt** when [configuring Malcolm](malcolm-config.md#ConfigAndTuning)) and restart Malcolm. Cont3xt is run by the `cont3xt` container (which uses the same image as the `arkime` container) and is accessible at **https://localhost/cont3xt/** if connecting locally.
+
+Cont3xt uses the same users as Arkime viewer and shares its [authentication](authsetup.md#AuthSetup), so no additional accounts are needed. Most integrations require API keys or credentials for their respective services: each user can provide these in the **Settings** page in Cont3xt. Those values are stored (encrypted using `ARKIME_PASSWORD_SECRET` from `arkime-secret.env`) in the OpenSearch or Elasticsearch document store along with Cont3xt's other data (link groups, views, history, etc.).
+
+When [role-based access control](authsetup.md#AuthKeycloakRBAC) is enabled, Cont3xt is available to users with the `ROLE_ADMIN`, `ROLE_READ_ACCESS`, `ROLE_READ_WRITE_ACCESS`, `ROLE_ARKIME_ADMIN`, `ROLE_ARKIME_READ_ACCESS`, or `ROLE_ARKIME_READ_WRITE_ACCESS` roles; users with `ROLE_ADMIN` or `ROLE_ARKIME_ADMIN` are granted Cont3xt's `cont3xtAdmin` role.
+
+## <a name="ArkimeParliament"></a>Parliament
+
+[Parliament](https://arkime.com/parliament) is an Arkime tool for monitoring the health and status of one or more Arkime clusters (e.g., several Malcolm instances), raising issues for conditions like stale capture nodes, low packet rates, or dropped packets.
+
+Parliament is disabled by default. To enable it, set `PARLIAMENT_DISABLED` to `false` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) (or select **Enable Arkime Parliament** when [configuring Malcolm](malcolm-config.md#ConfigAndTuning)) and restart Malcolm. Parliament is run by the `parliament` container (which uses the same image as the `arkime` container) and is accessible at **https://localhost/parliament/** if connecting locally.
+
+Parliament uses the same users and [authentication](authsetup.md#AuthSetup) as Arkime viewer. Its configuration (groups, clusters, and settings) is stored in the OpenSearch or Elasticsearch document store; the list of issues it has raised is kept inside the `parliament` container and is not preserved if that container is recreated. Users with `ROLE_ADMIN` or `ROLE_ARKIME_ADMIN` (or all users, when [role-based access control](authsetup.md#AuthKeycloakRBAC) is not enabled) are granted Parliament's `parliamentAdmin` role, which is required to add or modify groups and clusters. See the [Parliament documentation](https://arkime.com/parliament) for how to add groups and clusters to monitor.
+
