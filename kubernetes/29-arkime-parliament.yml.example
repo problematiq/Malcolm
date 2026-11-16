@@ -3,7 +3,9 @@
 # The Arkime image runs Parliament instead of capture/viewer/WISE when "parliament" is
 #   passed as the container's first argument (as below) or ARKIME_RUN_MODE=parliament is set.
 #   Copy this file to 29-arkime-parliament.yml to have it deployed along with the rest of
-#   Malcolm's manifests. See docs/arkime.md (Arkime run modes) for configuration details.
+#   Malcolm's manifests, and set ARKIME_PARLIAMENT_ENABLED=true in arkime.env (otherwise
+#   this container idles and NGINX doesn't route to it). See docs/arkime.md (Arkime run modes)
+#   for configuration details.
 ---
 apiVersion: v1
 kind: Service

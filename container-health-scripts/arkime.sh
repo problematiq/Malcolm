@@ -18,6 +18,10 @@ function http_listening() {
 }
 
 case "${ARKIME_RUN_MODE,,}" in
+    disabled)
+        # a Parliament/Cont3xt container whose component is disabled (see docker_entrypoint.sh)
+        exit 0
+        ;;
     parliament)
         supervisorctl status parliament >/dev/null 2>&1 && http_listening "${ARKIME_PARLIAMENT_PORT:-8008}"
         ;;

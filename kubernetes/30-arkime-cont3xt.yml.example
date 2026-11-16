@@ -3,7 +3,9 @@
 # The Arkime image runs Cont3xt instead of capture/viewer/WISE when "cont3xt" is
 #   passed as the container's first argument (as below) or ARKIME_RUN_MODE=cont3xt is set.
 #   Copy this file to 30-arkime-cont3xt.yml to have it deployed along with the rest of
-#   Malcolm's manifests. See docs/arkime.md (Arkime run modes) for configuration details.
+#   Malcolm's manifests, and set ARKIME_CONT3XT_ENABLED=true in arkime.env (otherwise
+#   this container idles and NGINX doesn't route to it). See docs/arkime.md (Arkime run modes)
+#   for configuration details.
 ---
 apiVersion: v1
 kind: Service

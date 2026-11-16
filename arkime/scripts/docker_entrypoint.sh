@@ -136,6 +136,19 @@ echo "Arkime container run mode: ${ARKIME_RUN_MODE}"
 #   Kubernetes exec probe) doesn't inherit this script's environment
 ( mkdir -p /var/run/arkime && echo "${ARKIME_RUN_MODE}" > /var/run/arkime/run_mode ) 2>/dev/null || true
 
+# A Parliament or Cont3xt container whose component is explicitly disabled (ARKIME_PARLIAMENT_ENABLED
+#   or ARKIME_CONT3XT_ENABLED set to false, e.g., the arkime-cont3xt service in docker-compose.yml,
+#   which is present by default) serves a "disabled" page on its port instead of running it.
+if [[ "${ARKIME_RUN_MODE}" == "parliament" ]] || [[ "${ARKIME_RUN_MODE}" == "cont3xt" ]]; then
+  COMPONENT_ENABLED_VAR="ARKIME_${ARKIME_RUN_MODE^^}_ENABLED"
+  COMPONENT_PORT_VAR="ARKIME_${ARKIME_RUN_MODE^^}_PORT"
+  if [[ "${!COMPONENT_ENABLED_VAR,,}" == "false" ]]; then
+    echo "Arkime ${ARKIME_RUN_MODE} is disabled (${COMPONENT_ENABLED_VAR}=false)"
+    ( echo "disabled" > /var/run/arkime/run_mode ) 2>/dev/null || true
+    exec /usr/local/bin/service_check_passthrough.sh -d -s "arkime-${ARKIME_RUN_MODE}" -p "${!COMPONENT_PORT_VAR}"
+  fi
+fi
+
 # if the run mode was the only argument, fall back to the image's default command
 (( $# == 0 )) && set -- /usr/local/bin/supervisord -c /etc/supervisord.conf -n
 ###############################################################################
