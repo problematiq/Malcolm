@@ -59,6 +59,15 @@ ARG ARKIME_LIVE_CAPTURE=false
 ARG ARKIME_ROTATED_PCAP=true
 ARG ARKIME_COMPRESSION_TYPE=none
 ARG ARKIME_COMPRESSION_LEVEL=0
+# Which Arkime component this container runs: arkime (capture/viewer/WISE, the default),
+#   parliament or cont3xt. This can also be selected by passing the mode as the first
+#   argument to the container (e.g., "docker run ... arkime parliament" or, in Kubernetes,
+#   "args: ["parliament"]"), which takes precedence over ARKIME_RUN_MODE.
+ARG ARKIME_RUN_MODE=arkime
+ARG ARKIME_PARLIAMENT_PORT=8008
+ARG ARKIME_CONT3XT_PORT=3218
+# Whether or not to attempt to update the MaxMind GeoIP databases at container startup
+ARG MAXMIND_GEOIP_DB_UPDATE_ENABLED=true
 
 #Whether or not to auto-tag logs based on filename
 ARG AUTO_TAG=true
@@ -83,6 +92,15 @@ ENV ARKIME_LIVE_CAPTURE=$ARKIME_LIVE_CAPTURE
 ENV ARKIME_COMPRESSION_TYPE=$ARKIME_COMPRESSION_TYPE
 ENV ARKIME_COMPRESSION_LEVEL=$ARKIME_COMPRESSION_LEVEL
 ENV ARKIME_ROTATED_PCAP=$ARKIME_ROTATED_PCAP
+ENV ARKIME_RUN_MODE=$ARKIME_RUN_MODE
+ENV ARKIME_PARLIAMENT_PORT=$ARKIME_PARLIAMENT_PORT
+ENV ARKIME_CONT3XT_PORT=$ARKIME_CONT3XT_PORT
+# these are derived from ARKIME_RUN_MODE by docker_entrypoint.sh and consumed by
+#   supervisord.conf; the defaults here only matter if the entrypoint is bypassed
+ENV ARKIME_RUN_ARKIME=true
+ENV ARKIME_RUN_PARLIAMENT=false
+ENV ARKIME_RUN_CONT3XT=false
+ENV MAXMIND_GEOIP_DB_UPDATE_ENABLED=$MAXMIND_GEOIP_DB_UPDATE_ENABLED
 ENV WISE=$WISE
 ENV VIEWER=$VIEWER
 ENV ARKIME_SSL=$ARKIME_SSL
@@ -195,17 +213,22 @@ RUN groupadd --gid $DEFAULT_GID $PGROUP && \
     ln -sfr /usr/local/bin/pcap_processor.py /usr/local/bin/pcap_arkime_processor.py && \
     ln -sfr /usr/local/bin/arkime_update_geo.sh $ARKIME_DIR/bin/arkime_update_geo.sh && \
     mv $ARKIME_DIR/etc/config.ini $ARKIME_DIR/etc/config.orig.ini && \
+    mv $ARKIME_DIR/etc/parliament.ini $ARKIME_DIR/etc/parliament.orig.ini && \
+    mv $ARKIME_DIR/etc/cont3xt.ini $ARKIME_DIR/etc/cont3xt.orig.ini && \
     cp $ARKIME_DIR/bin/capture $ARKIME_DIR/bin/capture-offline && \
     chown root:${PGROUP} $ARKIME_DIR/bin/capture && \
       setcap 'CAP_NET_RAW+eip CAP_NET_ADMIN+eip CAP_IPC_LOCK+eip' $ARKIME_DIR/bin/capture && \
     chown root:${PGROUP} /sbin/ethtool && \
       setcap 'CAP_NET_RAW+eip CAP_NET_ADMIN+eip' /sbin/ethtool && \
-    mkdir -p /var/run/arkime $ARKIME_DIR/logs $ARKIME_DIR/parsers $ARKIME_DIR/lua && \
-    chown -R $PUSER:$PGROUP $ARKIME_DIR/etc $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/rules $ARKIME_DIR/logs /var/run/arkime
+    mkdir -p /var/run/arkime $ARKIME_DIR/logs $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/parliament-data $ARKIME_DIR/cont3xt-cache && \
+    chown -R $PUSER:$PGROUP $ARKIME_DIR/etc $ARKIME_DIR/parsers $ARKIME_DIR/lua $ARKIME_DIR/rules $ARKIME_DIR/logs $ARKIME_DIR/parliament-data $ARKIME_DIR/cont3xt-cache /var/run/arkime
 #Update Path
 ENV PATH="/opt:$ARKIME_DIR/bin:${PATH}"
+# supervisord.conf references this, and supervisord refuses to start if it is undefined, so
+#   make sure it exists even when upload-common.env isn't provided (e.g., a standalone container)
+ENV EXTRA_TAGS=""
 
-EXPOSE 8000 8005 8081
+EXPOSE 8000 8005 8081 8008 3218
 WORKDIR $ARKIME_DIR
 
 ENTRYPOINT ["/usr/bin/tini", \

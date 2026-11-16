@@ -12,4 +12,13 @@ wget -nv --timeout=30 --tries=2 -O oui.txt_new https://www.wireshark.org/downloa
   mv -f oui.txt_new oui.txt || \
   rm -f oui.txt_new
 
-/usr/local/bin/maxmind-mmdb-download.sh -o "$(pwd)"
+# MAXMIND_GEOIP_DB_UPDATE_ENABLED=false skips the MaxMind GeoIP database download (e.g., for
+#   air-gapped deployments, or to keep the databases that were embedded at build time)
+case "$(echo "${MAXMIND_GEOIP_DB_UPDATE_ENABLED:-true}" | tr '[:upper:]' '[:lower:]')" in
+  false|no|off|0|f|n)
+    echo "MaxMind GeoIP database update disabled (MAXMIND_GEOIP_DB_UPDATE_ENABLED=${MAXMIND_GEOIP_DB_UPDATE_ENABLED})"
+    ;;
+  *)
+    /usr/local/bin/maxmind-mmdb-download.sh -o "$(pwd)"
+    ;;
+esac

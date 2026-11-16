@@ -54,6 +54,7 @@ GITHUB_TOKEN="${4:-${GITHUB_TOKEN:-}}"
 
 command -v yq >/dev/null 2>&1 || { echo "yq (mikefarah) is required" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
+docker buildx version >/dev/null 2>&1 || { echo "docker buildx is required (e.g., the docker-buildx-plugin package)" >&2; exit 1; }
 command -v git >/dev/null 2>&1 || { echo "git is required" >&2; exit 1; }
 
 if ! yq --version 2>&1 | grep -qi "mikefarah"; then
@@ -144,7 +145,12 @@ if [[ -n "$OLD_DOCKER_URL" ]]; then
     REPO="${REPO%@sha256:*}"
 
     echo "Inspecting ${REPO}:${NEW_VERSION} ..."
-    DIGEST="$(docker buildx imagetools inspect "${REPO}:${NEW_VERSION}" | awk '/^Digest:/{print $2; exit}')"
+    if ! IMAGETOOLS_OUTPUT="$(docker buildx imagetools inspect "${REPO}:${NEW_VERSION}" 2>&1)"; then
+        echo "docker buildx imagetools inspect failed for ${REPO}:${NEW_VERSION}:" >&2
+        echo "${IMAGETOOLS_OUTPUT}" | sed 's/^/  /' >&2
+        exit 1
+    fi
+    DIGEST="$(echo "${IMAGETOOLS_OUTPUT}" | awk '/^Digest:/{print $2; exit}')"
 
     if [[ -z "$DIGEST" ]]; then
         echo "Failed to resolve digest for ${REPO}:${NEW_VERSION}" >&2

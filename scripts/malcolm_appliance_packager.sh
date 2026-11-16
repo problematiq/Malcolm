@@ -111,6 +111,7 @@ if "$MKDIR" "$DESTDIR"; then
   trap cleanup EXIT
 
   "$MKDIR" $VERBOSE -p "$DESTDIR/arkime/etc/"
+  "$MKDIR" $VERBOSE -p "$DESTDIR/arkime/includes/"
   "$MKDIR" $VERBOSE -p "$DESTDIR/arkime/parsers/"
   "$MKDIR" $VERBOSE -p "$DESTDIR/arkime/rules/"
   "$MKDIR" $VERBOSE -p "$DESTDIR/config/"

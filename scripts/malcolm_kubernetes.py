@@ -130,6 +130,12 @@ MALCOLM_CONFIGMAPS = {
             'path': os.path.join(GetMalcolmPath(), os.path.join('arkime', 'rules')),
         },
     ],
+    'arkime-includes': [
+        {
+            'secret': False,
+            'path': os.path.join(GetMalcolmPath(), os.path.join('arkime', 'includes')),
+        },
+    ],
     'yara-rules': [
         {
             'secret': False,

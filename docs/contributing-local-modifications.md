@@ -201,6 +201,12 @@ services:
       - type: bind
         bind:
           create_host_path: false
+        source: ./arkime/includes
+        target: /opt/arkime/etc/includes/configmap
+        read_only: true
+      - type: bind
+        bind:
+          create_host_path: false
         source: ./arkime/rules
         target: /opt/arkime/rules
         read_only: true
@@ -233,6 +239,12 @@ services:
           create_host_path: false
         source: ./arkime/parsers
         target: /opt/arkime/parsers/configmap
+        read_only: true
+      - type: bind
+        bind:
+          create_host_path: false
+        source: ./arkime/includes
+        target: /opt/arkime/etc/includes/configmap
         read_only: true
       - type: bind
         bind:

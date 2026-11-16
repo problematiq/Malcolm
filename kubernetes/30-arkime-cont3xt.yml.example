@@ -1,0 +1,118 @@
+# Example: Arkime Cont3xt (https://arkime.com/cont3xt) run from the Malcolm Arkime image
+#
+# The Arkime image runs Cont3xt instead of capture/viewer/WISE when "cont3xt" is
+#   passed as the container's first argument (as below) or ARKIME_RUN_MODE=cont3xt is set.
+#   Copy this file to 30-arkime-cont3xt.yml to have it deployed along with the rest of
+#   Malcolm's manifests. See docs/arkime.md (Arkime run modes) for configuration details.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arkime-cont3xt
+  namespace: malcolm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3218
+      protocol: TCP
+      name: http
+  selector:
+    app: arkime-cont3xt
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arkime-cont3xt-deployment
+  namespace: malcolm
+  labels:
+    app: arkime-cont3xt
+    role: analysis
+spec:
+  selector:
+    matchLabels:
+      app: arkime-cont3xt
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: arkime-cont3xt
+        role: analysis
+    spec:
+      containers:
+      - name: arkime-cont3xt-container
+        image: ghcr.io/idaholab/malcolm/arkime:26.10.0
+        imagePullPolicy: Always
+        stdin: false
+        tty: true
+        args: ["cont3xt"]
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 3218
+        envFrom:
+          - configMapRef:
+              name: process-env
+          - configMapRef:
+              name: ssl-env
+          - configMapRef:
+              name: opensearch-env
+          - configMapRef:
+              name: arkime-env
+          - secretRef:
+              name: arkime-secret-env
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/container_health.sh
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 10
+        volumeMounts:
+          - mountPath: /var/local/ca-trust/configmap
+            name: arkime-cont3xt-var-local-catrust-volume
+          - mountPath: /var/local/curlrc/secretmap
+            name: arkime-cont3xt-opensearch-curlrc-secret-volume
+          - mountPath: "/opt/arkime/etc/includes/configmap"
+            name: arkime-cont3xt-includes-volume
+          - mountPath: "/opt/arkime/cont3xt-cache"
+            name: arkime-cont3xt-config-volume
+            subPath: "arkime/cont3xt-cache"
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: arkime-cont3xt-dirinit-container
+        image: ghcr.io/idaholab/malcolm/dirinit:26.10.0
+        imagePullPolicy: Always
+        stdin: false
+        tty: true
+        resources:
+          requests:
+            cpu: "0.25"
+            memory: "128Mi"
+          limits:
+            cpu: "0.5"
+            memory: "256Mi"
+        envFrom:
+          - configMapRef:
+              name: process-env
+        env:
+          - name: PUSER_MKDIR
+            value: "/data/config:arkime/cont3xt-cache"
+        volumeMounts:
+          - name: arkime-cont3xt-config-volume
+            mountPath: "/data/config"
+      volumes:
+        - name: arkime-cont3xt-var-local-catrust-volume
+          configMap:
+            name: var-local-catrust
+        - name: arkime-cont3xt-opensearch-curlrc-secret-volume
+          secret:
+            secretName: opensearch-curlrc
+        - name: arkime-cont3xt-includes-volume
+          configMap:
+            name: arkime-includes
+        - name: arkime-cont3xt-config-volume
+          persistentVolumeClaim:
+            claimName: config-claim

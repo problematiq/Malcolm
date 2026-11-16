@@ -8,7 +8,138 @@ function urlencodeall() {
     done
 }
 
+# set_ini_value <file> <section> <key> <value>
+#   Sets key=value in [section] of an .ini file, replacing the first occurrence of the key in
+#   that section, or adding it at the end of the section if the key is not present (the
+#   section itself is appended if it doesn't exist). The value is passed via the environment
+#   (not awk -v) so backslashes and other special characters are left alone.
+function set_ini_value() {
+    local INI_FILE="$1"
+    local INI_TMP_FILE
+    [[ -f "${INI_FILE}" ]] || return 1
+    INI_TMP_FILE="$(mktemp)" || return 1
+    if INI_SECTION="$2" INI_KEY="$3" INI_VALUE="$4" awk '
+        # blank/comment lines at the end of the target section are held in "pending" so a
+        #   new key is added after the last setting rather than after trailing blank lines
+        BEGIN { section = "[" ENVIRON["INI_SECTION"] "]"; key = ENVIRON["INI_KEY"]; val = ENVIRON["INI_VALUE"]; insec = 0; done = 0; pending = "" }
+        {
+          line = $0
+          trimmed = line
+          sub(/^[[:space:]]+/, "", trimmed)
+          if (trimmed ~ /^\[/) {
+            if (insec && !done) { print key "=" val; done = 1 }
+            printf "%s", pending; pending = ""
+            insec = (trimmed == section || index(trimmed, section) == 1)
+            print line
+            next
+          }
+          if (insec && !done) {
+            if (trimmed == "" || trimmed ~ /^[#;]/) { pending = pending line "\n"; next }
+            printf "%s", pending; pending = ""
+            if (index(trimmed, "=") > 0) {
+              k = substr(trimmed, 1, index(trimmed, "=") - 1)
+              sub(/[[:space:]]+$/, "", k)
+              if (k == key) { print key "=" val; done = 1; next }
+            }
+          }
+          print line
+        }
+        END {
+          if (!done) {
+            if (!insec) { printf "%s", pending; pending = ""; print ""; print section }
+            print key "=" val
+          }
+          printf "%s", pending
+        }
+      ' "${INI_FILE}" > "${INI_TMP_FILE}"; then
+        # cat rather than mv to preserve the original file's ownership and permissions
+        cat "${INI_TMP_FILE}" > "${INI_FILE}"
+        rm -f "${INI_TMP_FILE}"
+    else
+        rm -f "${INI_TMP_FILE}"
+        return 1
+    fi
+}
+
+# set_ini_includes <file> <section>
+#   ARKIME_CONFIG_INCLUDES may contain one or more paths (separated by ';' or ',') to
+#   additional .ini files which are written to the "includes" setting of the given section
+#   (see https://arkime.com/settings#includes). Relative paths are relative to $ARKIME_DIR/etc.
+#   As with Arkime itself, prefix a path with "-" to make it optional (Arkime will otherwise
+#   refuse to start if an included file is missing).
+function set_ini_includes() {
+    local INI_FILE="$1"
+    local INI_SECTION="$2"
+    local INCLUDE
+    local INCLUDE_PATH
+    local INCLUDE_OPTIONAL
+    local INCLUDES=()
+    [[ -n "${ARKIME_CONFIG_INCLUDES:-}" ]] || return 0
+    while read -r INCLUDE; do
+        # trim whitespace
+        INCLUDE="${INCLUDE#"${INCLUDE%%[![:space:]]*}"}"
+        INCLUDE="${INCLUDE%"${INCLUDE##*[![:space:]]}"}"
+        [[ -z "${INCLUDE}" ]] && continue
+        INCLUDE_OPTIONAL=
+        INCLUDE_PATH="${INCLUDE}"
+        if [[ "${INCLUDE_PATH}" == -* ]]; then
+            INCLUDE_OPTIONAL=-
+            INCLUDE_PATH="${INCLUDE_PATH:1}"
+        fi
+        [[ "${INCLUDE_PATH}" != /* ]] && INCLUDE_PATH="${ARKIME_DIR}/etc/${INCLUDE_PATH}"
+        if [[ -z "${INCLUDE_OPTIONAL}" ]] && [[ ! -r "${INCLUDE_PATH}" ]]; then
+            echo "WARNING: ARKIME_CONFIG_INCLUDES file \"${INCLUDE_PATH}\" does not exist or is not readable; Arkime will fail to start until it is provided (prefix it with \"-\" to make it optional)" >&2
+        fi
+        INCLUDES+=( "${INCLUDE_OPTIONAL}${INCLUDE_PATH}" )
+    done < <(echo "${ARKIME_CONFIG_INCLUDES}" | tr ',;' '\n\n')
+    (( ${#INCLUDES[@]} > 0 )) || return 0
+    set_ini_value "${INI_FILE}" "${INI_SECTION}" includes "$(IFS=';'; echo "${INCLUDES[*]}")" && \
+      echo "Added includes to ${INI_FILE}: $(IFS=';'; echo "${INCLUDES[*]}")"
+}
+
 ARKIME_DIR=${ARKIME_DIR:-"/opt/arkime"}
+
+###############################################################################
+# Determine which Arkime component this container runs. The run mode can be
+#   specified as the first argument to the container (e.g., "docker run ... parliament",
+#   "command: [parliament]" in docker-compose.yml, or "args: [parliament]" in a Kubernetes
+#   manifest) which takes precedence over the ARKIME_RUN_MODE environment variable.
+#   - arkime     - capture, viewer and WISE (the default)
+#   - parliament - Arkime Parliament (https://arkime.com/parliament)
+#   - cont3xt    - Arkime Cont3xt (https://arkime.com/cont3xt)
+ARKIME_RUN_MODE="${ARKIME_RUN_MODE:-arkime}"
+case "${1,,}" in
+  arkime|parliament|cont3xt)
+    ARKIME_RUN_MODE="${1,,}"
+    shift
+    ;;
+esac
+ARKIME_RUN_MODE="${ARKIME_RUN_MODE,,}"
+case "${ARKIME_RUN_MODE}" in
+  arkime)
+    export ARKIME_RUN_ARKIME=true ARKIME_RUN_PARLIAMENT=false ARKIME_RUN_CONT3XT=false
+    ;;
+  parliament|cont3xt)
+    [[ "${ARKIME_RUN_MODE}" == "parliament" ]] && export ARKIME_RUN_PARLIAMENT=true || export ARKIME_RUN_PARLIAMENT=false
+    [[ "${ARKIME_RUN_MODE}" == "cont3xt" ]] && export ARKIME_RUN_CONT3XT=true || export ARKIME_RUN_CONT3XT=false
+    # none of the capture/viewer/WISE processes run in these modes
+    export ARKIME_RUN_ARKIME=false ARKIME_PCAP_PROCESSOR=false ARKIME_LIVE_CAPTURE=false WISE=off VIEWER=off
+    ;;
+  *)
+    echo "ERROR: invalid Arkime run mode \"${ARKIME_RUN_MODE}\" (expected one of: arkime, parliament, cont3xt)" >&2
+    exit 1
+    ;;
+esac
+export ARKIME_RUN_MODE
+echo "Arkime container run mode: ${ARKIME_RUN_MODE}"
+# record the run mode for container_health.sh, which (being run via "docker exec" or a
+#   Kubernetes exec probe) doesn't inherit this script's environment
+( mkdir -p /var/run/arkime && echo "${ARKIME_RUN_MODE}" > /var/run/arkime/run_mode ) 2>/dev/null || true
+
+# if the run mode was the only argument, fall back to the image's default command
+(( $# == 0 )) && set -- /usr/local/bin/supervisord -c /etc/supervisord.conf -n
+###############################################################################
+
 ARKIME_RULES_DIR=${ARKIME_RULES_DIR:-"/opt/arkime/rules"}
 ARKIME_CONFIG_FILE="${ARKIME_DIR}"/etc/config.ini
 ARKIME_PASSWORD_SECRET=${ARKIME_PASSWORD_SECRET:-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 32)}
@@ -71,7 +202,7 @@ fi
 OPENSEARCH_URL_FINAL="${PROTOCOL}${NEW_USER}:${NEW_PASSWORD}@${HOSTPORT}"
 
 # if config.ini does not exist but config.orig.ini does, use it as a basis and modify based on env. vars
-if [[ ! -f "${ARKIME_CONFIG_FILE}" ]] && [[ -r "${ARKIME_DIR}"/etc/config.orig.ini ]]; then
+if [[ "${ARKIME_RUN_MODE}" == "arkime" ]] && [[ ! -f "${ARKIME_CONFIG_FILE}" ]] && [[ -r "${ARKIME_DIR}"/etc/config.orig.ini ]]; then
     cp "${ARKIME_DIR}"/etc/config.orig.ini "${ARKIME_CONFIG_FILE}"
 
     sed -i "s|^\(elasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|" "${ARKIME_CONFIG_FILE}"
@@ -224,8 +355,13 @@ if [[ ! -f "${ARKIME_CONFIG_FILE}" ]] && [[ -r "${ARKIME_DIR}"/etc/config.orig.i
       CONFIG_RBAC_FILE="$(mktemp)"
       echo -e "\n[user-role-mappings]" >> "${RBAC_FILE}"
       echo "arkimeUser=true" >> "${RBAC_FILE}"
+      # these mappings replace a user's roles on every request, so include the Cont3xt and
+      #   Parliament roles or users would lose access to them (they share this user database)
+      echo "cont3xtUser=true" >> "${RBAC_FILE}"
+      echo "parliamentUser=true" >> "${RBAC_FILE}"
       [[ -n "$ROLE_ARKIME_ADMIN" ]] && \
-        echo "arkimeAdmin=(vals['x-forwarded-roles'] || '').split(',').map(s => s.trim()).includes('$ROLE_ARKIME_ADMIN')" >> "${RBAC_FILE}"
+        echo "arkimeAdmin=(vals['x-forwarded-roles'] || '').split(',').map(s => s.trim()).includes('$ROLE_ARKIME_ADMIN')" >> "${RBAC_FILE}" && \
+        echo "parliamentAdmin=(vals['x-forwarded-roles'] || '').split(',').map(s => s.trim()).includes('$ROLE_ARKIME_ADMIN')" >> "${RBAC_FILE}"
       # [[ -n "$ROLE_ARKIME_READ_ACCESS" ]]  && \
       #   echo "role:read_access=(vals['x-forwarded-roles'] || '').split(',').map(s => s.trim()).includes('$ROLE_ARKIME_READ_ACCESS')" >> "${RBAC_FILE}"
       # [[ -n "$ROLE_ARKIME_READ_WRITE_ACCESS" ]]  && \
@@ -255,11 +391,66 @@ if [[ ! -f "${ARKIME_CONFIG_FILE}" ]] && [[ -r "${ARKIME_DIR}"/etc/config.orig.i
       rm -f "${RBAC_FILE}" "${CONFIG_RBAC_FILE}"
     fi
 
+    # additional config file(s) to include (see set_ini_includes above)
+    set_ini_includes "${ARKIME_CONFIG_FILE}" default
+
     # make sure permissions and ownership are nice
     chmod 600 "${ARKIME_CONFIG_FILE}" || true
     [[ -n ${PUID} ]] && chown -f ${PUID} "${ARKIME_CONFIG_FILE}" || true
     [[ -n ${PGID} ]] && chown -f :${PGID} "${ARKIME_CONFIG_FILE}" || true
-fi 
+fi
+
+# Parliament and Cont3xt: if <component>.ini does not exist but <component>.orig.ini does,
+#   use it as a basis and modify based on env. vars (as with config.ini above, providing
+#   your own <component>.ini via bind mount or configMap skips this)
+if [[ "${ARKIME_RUN_MODE}" == "parliament" ]] || [[ "${ARKIME_RUN_MODE}" == "cont3xt" ]]; then
+    COMPONENT_CONFIG_FILE="${ARKIME_DIR}/etc/${ARKIME_RUN_MODE}.ini"
+    COMPONENT_CONFIG_ORIG_FILE="${ARKIME_DIR}/etc/${ARKIME_RUN_MODE}.orig.ini"
+    if [[ ! -f "${COMPONENT_CONFIG_FILE}" ]] && [[ -r "${COMPONENT_CONFIG_ORIG_FILE}" ]]; then
+        cp "${COMPONENT_CONFIG_ORIG_FILE}" "${COMPONENT_CONFIG_FILE}"
+        SECTION="${ARKIME_RUN_MODE}"
+
+        set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" usersElasticsearch "${OPENSEARCH_URL_FINAL}"
+        set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" passwordSecret "${ARKIME_PASSWORD_SECRET}"
+
+        if [[ "${ARKIME_RUN_MODE}" == "parliament" ]]; then
+            [[ -n "${ARKIME_PARLIAMENT_PORT}" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" port "${ARKIME_PARLIAMENT_PORT}"
+            [[ -n "${ARKIME_PARLIAMENT_WEB_BASE_PATH}" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" webBasePath "${ARKIME_PARLIAMENT_WEB_BASE_PATH}"
+            [[ -n "${ARKIME_PARLIAMENT_FILE}" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" file "${ARKIME_PARLIAMENT_FILE}"
+            PARLIAMENT_DATA_DIR="$(dirname "$(grep -Pi '^\s*file\s*=' "${COMPONENT_CONFIG_FILE}" | head -n 1 | cut -d'=' -f2- | xargs)")"
+            if [[ -n "${PARLIAMENT_DATA_DIR}" ]] && [[ "${PARLIAMENT_DATA_DIR}" != "." ]]; then
+                mkdir -p "${PARLIAMENT_DATA_DIR}" 2>/dev/null
+                [[ -n ${PUID} ]] && chown -f ${PUID} "${PARLIAMENT_DATA_DIR}" || true
+                [[ -n ${PGID} ]] && chown -f :${PGID} "${PARLIAMENT_DATA_DIR}" || true
+            fi
+        else
+            set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" elasticsearch "${OPENSEARCH_URL_FINAL}"
+            [[ -n "${ARKIME_CONT3XT_PORT}" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" port "${ARKIME_CONT3XT_PORT}"
+            [[ -n "${ARKIME_CONT3XT_WEB_BASE_PATH}" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" webBasePath "${ARKIME_CONT3XT_WEB_BASE_PATH}"
+            CONT3XT_CACHE_DIR="$(grep -Pi '^\s*lmdbDir\s*=' "${COMPONENT_CONFIG_FILE}" | head -n 1 | cut -d'=' -f2- | xargs)"
+            if [[ -n "${CONT3XT_CACHE_DIR}" ]]; then
+                mkdir -p "${CONT3XT_CACHE_DIR}" 2>/dev/null
+                [[ -n ${PUID} ]] && chown -f ${PUID} "${CONT3XT_CACHE_DIR}" || true
+                [[ -n ${PGID} ]] && chown -f :${PGID} "${CONT3XT_CACHE_DIR}" || true
+            fi
+        fi
+
+        # certFile/keyFile is cleared based on ARKIME_SSL, or overridden via ARKIME_CERTFILE/ARKIME_KEYFILE
+        if [[ "${ARKIME_SSL:-true}" == "false" ]]; then
+            set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" certFile ""
+            set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" keyFile ""
+        fi
+        [[ -n "$ARKIME_CERTFILE" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" certFile "${ARKIME_CERTFILE}"
+        [[ -n "$ARKIME_KEYFILE" ]] && set_ini_value "${COMPONENT_CONFIG_FILE}" "${SECTION}" keyFile "${ARKIME_KEYFILE}"
+
+        # additional config file(s) to include (see set_ini_includes above)
+        set_ini_includes "${COMPONENT_CONFIG_FILE}" "${SECTION}"
+
+        chmod 600 "${COMPONENT_CONFIG_FILE}" || true
+        [[ -n ${PUID} ]] && chown -f ${PUID} "${COMPONENT_CONFIG_FILE}" || true
+        [[ -n ${PGID} ]] && chown -f :${PGID} "${COMPONENT_CONFIG_FILE}" || true
+    fi
+fi
 
 
 # An example wise.ini file is baked into the container image by the Dockerfile as $ARKIME_DIR/etc/wise.ini.example
@@ -269,7 +460,7 @@ fi
 # $ARKIME_DIR/wiseini/ will be a persistent volume when run under Kubernetes.
 # This allows changes to persist when the wise application edits its own ini file at runtime.
 
-if [[ -r "${ARKIME_WISE_EXAMPLE_FILE}" ]] && [[ "$LIVE_CAPTURE" == "false" ]]; then
+if [[ "${ARKIME_RUN_MODE}" == "arkime" ]] && [[ -r "${ARKIME_WISE_EXAMPLE_FILE}" ]] && [[ "$LIVE_CAPTURE" == "false" ]]; then
   if [[ ! -f "${ARKIME_WISE_CONFIG_FILE}" ]]; then
       cp "${ARKIME_WISE_EXAMPLE_FILE}" "${ARKIME_WISE_CONFIG_FILE}"
   elif [[ ! -s "${ARKIME_WISE_CONFIG_FILE}" ]]; then
@@ -283,19 +474,28 @@ if [[  -d "${ARKIME_DIR}/wiseini" ]]; then
   [[ -n ${PGID} ]] && chown -fR :${PGID} "${ARKIME_DIR}/wiseini" || true
 fi
 
-if [[ "${ARKIME_EXPOSE_WISE_GUI}"  == "true" ]]; then
-  sed "s|^\(elasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|" "${ARKIME_WISE_CONFIG_FILE}" > ./wise.tmp
-  sed -i "s|^\(wiseHost=\).*|\1""0.0.0.0""|" ./wise.tmp
+# wise.ini may be absent (e.g., arkime-live) or read-only (e.g., the arkime-live Kubernetes
+#   manifest mounts wiseini read-only), in which case there's nothing to (or no way to) update
+if [[ "${ARKIME_RUN_MODE}" == "arkime" ]] && \
+   [[ "${ARKIME_EXPOSE_WISE_GUI}"  == "true" ]] && \
+   [[ -f "${ARKIME_WISE_CONFIG_FILE}" ]] && \
+   [[ -w "${ARKIME_WISE_CONFIG_FILE}" ]] && \
+   WISE_TMP_FILE="$(mktemp)"; then
+  sed "s|^\(elasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|" "${ARKIME_WISE_CONFIG_FILE}" > "${WISE_TMP_FILE}"
+  sed -i "s|^\(wiseHost=\).*|\1""0.0.0.0""|" "${WISE_TMP_FILE}"
   if [[ "$MALCOLM_PROFILE" == "hedgehog" ]] || [[ "$LIVE_CAPTURE" == "true" ]]; then
-    sed -r -i "s/(authMode)\s*=\s*.*/\1=s2s/" ./wise.tmp
+    sed -r -i "s/(authMode)\s*=\s*.*/\1=s2s/" "${WISE_TMP_FILE}"
   fi
   if [[ "${ARKIME_ALLOW_WISE_GUI_CONFIG}"  == "true" ]]; then
-    sed -i "s|^\(usersElasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|"  ./wise.tmp
+    sed -i "s|^\(usersElasticsearch=\).*|\1"${OPENSEARCH_URL_FINAL}"|"  "${WISE_TMP_FILE}"
     sed -i "s|^\(\s*\$ARKIME_DIR\/bin\/node wiseService.js\).*|\1 --webcode "${ARKIME_WISE_CONFIG_PIN_CODE}" --webconfig --insecure -c \$ARKIME_DIR/wiseini/wise.ini|" "${ARKIME_WISE_SERVICE_SCRIPT}"
   fi
-  truncate --size=0 "${ARKIME_WISE_CONFIG_FILE}" 2>/dev/null || true
-  tee -a "${ARKIME_WISE_CONFIG_FILE}" < ./wise.tmp >/dev/null 2>&1 || true
-  rm ./wise.tmp
+  # only replace wise.ini if the modified copy was produced successfully
+  if [[ -s "${WISE_TMP_FILE}" ]]; then
+    truncate --size=0 "${ARKIME_WISE_CONFIG_FILE}" 2>/dev/null || true
+    tee -a "${ARKIME_WISE_CONFIG_FILE}" < "${WISE_TMP_FILE}" >/dev/null 2>&1 || true
+  fi
+  rm -f "${WISE_TMP_FILE}"
 fi
 
 unset OPENSEARCH_URL_FINAL

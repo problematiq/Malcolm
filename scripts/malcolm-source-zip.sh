@@ -161,6 +161,7 @@ pushd "$SCRIPT_DIR"/.. >/dev/null 2>&1
     -E '/scripts' \
     -E '_config.yml' \
     -E 'arkime/etc' \
+    -E 'arkime/includes' \
     -E 'arkime/parsers' \
     -E 'arkime/rules' \
     -E 'arkime/wise' \

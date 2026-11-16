@@ -84,6 +84,8 @@ spec:
             name: arkime-parsers-volume
           - mountPath: "/opt/arkime/rules/configmap"
             name: arkime-rules-volume
+          - mountPath: "/opt/arkime/etc/includes/configmap"
+            name: arkime-includes-volume
           - mountPath: "/data/pcap"
             name: arkime-pcap-volume
           - mountPath: "/opt/arkime/wiseini"
@@ -127,6 +129,9 @@ spec:
         - name: arkime-rules-volume
           configMap:
             name: arkime-rules
+        - name: arkime-includes-volume
+          configMap:
+            name: arkime-includes
         - name: arkime-pcap-volume
           persistentVolumeClaim:
             claimName: pcap-claim

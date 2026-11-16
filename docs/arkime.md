@@ -13,6 +13,10 @@
     - [Statistics](#ArkimeStats)
     - [Settings](#ArkimeSettings)
     - [WISE](#ArkimeWISE)
+    - [Arkime image run modes and configuration](#ArkimeRunModes)
+        + [Parliament and Cont3xt](#ArkimeParliamentCont3xt)
+        + [Including additional configuration files](#ArkimeConfigIncludes)
+        + [Disabling MaxMind GeoIP database updates](#ArkimeMaxMindUpdates)
 
 
 ## <a name="ArkimeZeek"></a>Zeek log integration
@@ -195,3 +199,127 @@ See Arkime's documentation for additional information on leveraging the [WISE pl
 For more information on configuring WISE within Malcolm, see the [Arkime environment variables](malcolm-config.md#MalcolmConfigEnvVars).
 
 To leverage WISE when using a Hedgehog Linux, the sensor needs to be configured to request data from the WISE service. This can be setup during sensor configuration. See [Configuring Communication Between Hedgehog and Malcolm](malcolm-hedgehog-e2e-iso-install.md#HedgehogCommConfig) for more information.
+
+## <a name="ArkimeRunModes"></a>Arkime image run modes and configuration
+
+The `ghcr.io/idaholab/malcolm/arkime` image can run any one of the following Arkime components. The component is selected by passing its name as the first argument to the container, or by setting the `ARKIME_RUN_MODE` environment variable (the argument takes precedence if both are given):
+
+| Run mode | Runs | Default port |
+|---|---|---|
+| `arkime` (default) | `capture`, `viewer` and WISE, as used by Malcolm's `arkime` and `arkime-live` containers | `8005` (viewer), `8081` (WISE) |
+| `parliament` | [Arkime Parliament](https://arkime.com/parliament) | `8008` (`ARKIME_PARLIAMENT_PORT`) |
+| `cont3xt` | [Arkime Cont3xt](https://arkime.com/cont3xt) | `3218` (`ARKIME_CONT3XT_PORT`) |
+
+This works the same way under Docker and Kubernetes:
+
+```bash
+docker run -d --name arkime-parliament --env-file ./config/arkime.env ghcr.io/idaholab/malcolm/arkime:26.10.0 parliament
+```
+
+```yaml
+# docker-compose.yml
+  arkime-cont3xt:
+    image: ghcr.io/idaholab/malcolm/arkime:26.10.0
+    command: ["cont3xt"]   # or: environment: { ARKIME_RUN_MODE: cont3xt }
+```
+
+```yaml
+# Kubernetes container spec
+      containers:
+      - name: arkime-parliament-container
+        image: ghcr.io/idaholab/malcolm/arkime:26.10.0
+        args: ["parliament"]   # or: env: [{ name: ARKIME_RUN_MODE, value: parliament }]
+```
+
+The container health check (`/usr/local/bin/container_health.sh`) checks whichever component the container was started as.
+
+### <a name="ArkimeParliamentCont3xt"></a>Parliament and Cont3xt
+
+Complete Kubernetes examples are provided in [`kubernetes/29-arkime-parliament.yml.example`]({{ site.github.repository_url }}/blob/{{ site.github.build_revision }}/kubernetes/29-arkime-parliament.yml.example) and [`kubernetes/30-arkime-cont3xt.yml.example`]({{ site.github.repository_url }}/blob/{{ site.github.build_revision }}/kubernetes/30-arkime-cont3xt.yml.example). Copy either to a `.yml` file in the `kubernetes` directory to have it deployed with the rest of Malcolm. For Docker Compose, a service like the following can be added to `docker-compose.yml`, using the same `env_file`s as the `arkime` service, minus `arkime-offline.env`:
+
+```yaml
+  arkime-parliament:
+    image: ghcr.io/idaholab/malcolm/arkime:26.10.0
+    profiles: ["malcolm"]
+    command: ["parliament"]
+    env_file:
+    - ./config/process.env
+    - ./config/ssl.env
+    - ./config/opensearch.env
+    - ./config/arkime.env
+    - ./config/arkime-secret.env
+    volumes:
+    - type: bind
+      bind:
+        create_host_path: false
+      source: ./nginx/ca-trust
+      target: /var/local/ca-trust
+      read_only: true
+    - type: bind
+      bind:
+        create_host_path: false
+      source: ./.opensearch.primary.curlrc
+      target: /var/local/curlrc/.opensearch.primary.curlrc
+      read_only: true
+    - type: bind
+      bind:
+        create_host_path: false
+      source: ./arkime/includes
+      target: /opt/arkime/etc/includes/configmap
+      read_only: true
+    # persist Parliament's cluster definitions (use /opt/arkime/cont3xt-cache for Cont3xt)
+    - type: volume
+      source: arkime-parliament-data
+      target: /opt/arkime/parliament-data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/container_health.sh"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+```
+
+(declaring `arkime-parliament-data` under the file's top-level `volumes:` key, or replacing it with a bind mount).
+
+When the container starts in `parliament` or `cont3xt` mode, `/opt/arkime/etc/parliament.ini` or `/opt/arkime/etc/cont3xt.ini` is generated from the template in the image ([`arkime/etc/parliament.ini`]({{ site.github.repository_url }}/blob/{{ site.github.build_revision }}/arkime/etc/parliament.ini), [`arkime/etc/cont3xt.ini`]({{ site.github.repository_url }}/blob/{{ site.github.build_revision }}/arkime/etc/cont3xt.ini)) using the following environment variables. If that file already exists (e.g., it was bind-mounted or provided by a Kubernetes configMap), it is used as-is.
+
+* OpenSearch connection - from `OPENSEARCH_URL` and the credentials in `.opensearch.primary.curlrc`, as for the Arkime viewer
+* `ARKIME_PASSWORD_SECRET`, `ARKIME_SSL`, `ARKIME_CERTFILE` and `ARKIME_KEYFILE` - as for the Arkime viewer (a self-signed certificate is generated if TLS is enabled and none is provided)
+* `ARKIME_PARLIAMENT_PORT` (default `8008`), `ARKIME_PARLIAMENT_WEB_BASE_PATH` (default `/parliament/`, which is what Malcolm's NGINX reverse proxy expects) and `ARKIME_PARLIAMENT_FILE` (default `/opt/arkime/parliament-data/parliament.json`)
+* `ARKIME_CONT3XT_PORT` (default `3218`) and `ARKIME_CONT3XT_WEB_BASE_PATH` (default `/cont3xt/`, which is what Malcolm's NGINX reverse proxy expects)
+* `ARKIME_CONFIG_INCLUDES` - see [below](#ArkimeConfigIncludes)
+
+Any other setting can be overridden with Arkime's own environment variable syntax, `ARKIME_<section>__<setting>` (e.g., `ARKIME_cont3xt__cacheTimeout=1h`; see [Arkime settings](https://arkime.com/settings)).
+
+**Cont3xt in Malcolm's web interface:** once a Cont3xt container is deployed as above (it must be reachable from the `nginx-proxy` container as `arkime-cont3xt`, which is the service name used in both examples), set `ARKIME_CONT3XT_ENABLED=true` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) and restart Malcolm. Malcolm's NGINX reverse proxy then serves Cont3xt at `https://<MALCOLM-IP>/cont3xt/`, behind Malcolm's usual authentication, and the **Cont3xt** button on Malcolm's landing page links to it (while it's disabled, the button links to this documentation instead). `ARKIME_CONT3XT_HOST` and `ARKIME_CONT3XT_PORT` can be set in `arkime.env` if Cont3xt is reachable at a different host name or port. When [role-based access control](authsetup.md#AuthKeycloakRBAC) is enabled, `/cont3xt/` requires the same Malcolm roles as read access to Arkime. Users are created in Cont3xt the first time they visit it, with Arkime's default roles (which include `cont3xtUser`).
+
+**Parliament in Malcolm's web interface:** similarly, once a Parliament container is deployed and reachable from the `nginx-proxy` container as `arkime-parliament` (the service name used in both examples), set `ARKIME_PARLIAMENT_ENABLED=true` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) and restart Malcolm. Malcolm's NGINX reverse proxy then serves Parliament at `https://<MALCOLM-IP>/parliament/`, behind Malcolm's usual authentication; like WISE, it has no button on the landing page. `ARKIME_PARLIAMENT_HOST` and `ARKIME_PARLIAMENT_PORT` can be set in `arkime.env` if Parliament is reachable at a different host name or port. When role-based access control is enabled, `/parliament/` requires the same Malcolm roles as read access to Arkime. Users are created in Parliament the first time they visit it, with Arkime's default roles, which include `parliamentUser` (view only). Changing Parliament's configuration requires the `parliamentAdmin` role: with role-based access control enabled, users with `ROLE_ARKIME_ADMIN` (or `ROLE_ADMIN`) are given it when they use Arkime; otherwise it can be assigned on the Arkime **Users** page.
+
+**Authentication:** like the Arkime viewer in Malcolm, Parliament and Cont3xt are configured for header authentication (`authMode=header`, trusting the `x-forwarded-user` header), so they **must not** be exposed directly to users, only through Malcolm's NGINX reverse proxy (as described above) or another authenticating reverse proxy that sets that header. Alternatively, switch them to another [authentication mode](https://arkime.com/settings#authMode), e.g., `ARKIME_parliament__authMode=digest`.
+
+### <a name="ArkimeConfigIncludes"></a>Including additional configuration files
+
+Additional Arkime `.ini` files can be merged into the generated configuration (`config.ini`, `parliament.ini` or `cont3xt.ini`, depending on the run mode) through Arkime's [`includes`](https://arkime.com/settings#includes) setting, without replacing the whole file. Set `ARKIME_CONFIG_INCLUDES` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) to one or more paths separated by `;`. Relative paths are relative to `/opt/arkime/etc`, and a path prefixed with `-` is optional (Arkime refuses to start if a non-optional included file is missing).
+
+The `./arkime/includes` directory in the Malcolm installation directory is made available as `/opt/arkime/etc/includes` in the `arkime` and `arkime-live` containers under both Docker (bind mount) and Kubernetes (the `arkime-includes` configMap), so the same setting works for both. For example, to add a [custom view](https://arkime.com/settings#custom-views) and change a setting:
+
+```ini
+# ./arkime/includes/local.ini
+[default]
+maxESConns=60
+
+[custom-views]
+my_view=title:My View;require:zeek.uid;fields:zeek.uid,event.dataset
+```
+
+```bash
+# ./config/arkime.env
+ARKIME_CONFIG_INCLUDES=includes/local.ini
+```
+
+Then restart Malcolm (for Kubernetes, the configMaps are regenerated when Malcolm is started).
+
+### <a name="ArkimeMaxMindUpdates"></a>Disabling MaxMind GeoIP database updates
+
+By default, the `arkime` and `arkime-live` containers attempt to download updated [MaxMind GeoLite2](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) databases each time they start (using `MAXMIND_GEOIP_DB_ACCOUNT_ID`/`MAXMIND_GEOIP_DB_LICENSE_KEY` or `MAXMIND_GEOIP_DB_ALTERNATE_DOWNLOAD_URL`). Set `MAXMIND_GEOIP_DB_UPDATE_ENABLED=false` in [`arkime.env`](malcolm-config.md#MalcolmConfigEnvVars) to skip this, e.g., for air-gapped deployments or to keep using the databases embedded in the image when it was built.
+
