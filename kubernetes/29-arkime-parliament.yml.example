@@ -1,0 +1,120 @@
+# Example: Arkime Parliament (https://arkime.com/parliament) run from the Malcolm Arkime image
+#
+# The Arkime image runs Parliament instead of capture/viewer/WISE when "parliament" is
+#   passed as the container's first argument (as below) or ARKIME_RUN_MODE=parliament is set.
+#   Copy this file to 29-arkime-parliament.yml to have it deployed along with the rest of
+#   Malcolm's manifests, and set ARKIME_PARLIAMENT_ENABLED=true in arkime.env (otherwise
+#   this container idles and NGINX doesn't route to it). See docs/arkime.md (Arkime run modes)
+#   for configuration details.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arkime-parliament
+  namespace: malcolm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8008
+      protocol: TCP
+      name: http
+  selector:
+    app: arkime-parliament
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arkime-parliament-deployment
+  namespace: malcolm
+  labels:
+    app: arkime-parliament
+    role: analysis
+spec:
+  selector:
+    matchLabels:
+      app: arkime-parliament
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: arkime-parliament
+        role: analysis
+    spec:
+      containers:
+      - name: arkime-parliament-container
+        image: ghcr.io/idaholab/malcolm/arkime:26.10.0
+        imagePullPolicy: Always
+        stdin: false
+        tty: true
+        args: ["parliament"]
+        ports:
+          - name: http
+            protocol: TCP
+            containerPort: 8008
+        envFrom:
+          - configMapRef:
+              name: process-env
+          - configMapRef:
+              name: ssl-env
+          - configMapRef:
+              name: opensearch-env
+          - configMapRef:
+              name: arkime-env
+          - secretRef:
+              name: arkime-secret-env
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/container_health.sh
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 10
+        volumeMounts:
+          - mountPath: /var/local/ca-trust/configmap
+            name: arkime-parliament-var-local-catrust-volume
+          - mountPath: /var/local/curlrc/secretmap
+            name: arkime-parliament-opensearch-curlrc-secret-volume
+          - mountPath: "/opt/arkime/etc/includes/configmap"
+            name: arkime-parliament-includes-volume
+          - mountPath: "/opt/arkime/parliament-data"
+            name: arkime-parliament-config-volume
+            subPath: "arkime/parliament"
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: arkime-parliament-dirinit-container
+        image: ghcr.io/idaholab/malcolm/dirinit:26.10.0
+        imagePullPolicy: Always
+        stdin: false
+        tty: true
+        resources:
+          requests:
+            cpu: "0.25"
+            memory: "128Mi"
+          limits:
+            cpu: "0.5"
+            memory: "256Mi"
+        envFrom:
+          - configMapRef:
+              name: process-env
+        env:
+          - name: PUSER_MKDIR
+            value: "/data/config:arkime/parliament"
+        volumeMounts:
+          - name: arkime-parliament-config-volume
+            mountPath: "/data/config"
+      volumes:
+        - name: arkime-parliament-var-local-catrust-volume
+          configMap:
+            name: var-local-catrust
+        - name: arkime-parliament-opensearch-curlrc-secret-volume
+          secret:
+            secretName: opensearch-curlrc
+        - name: arkime-parliament-includes-volume
+          configMap:
+            name: arkime-includes
+        - name: arkime-parliament-config-volume
+          persistentVolumeClaim:
+            claimName: config-claim

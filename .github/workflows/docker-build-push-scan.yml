@@ -74,7 +74,18 @@ jobs:
         run: echo "mversion=$(grep -P "^\s+image:.*/malcolm/" docker-compose-dev.yml | awk '{print $2}' | cut -d':' -f2 | uniq -c | sort -nr | awk '{print $2}' | head -n 1)" >> $GITHUB_OUTPUT
         id: extract_malcolm_version
       -
+        # pulling the BuildKit image and bootstrapping the builder occasionally fails for
+        #   transient (network/registry) reasons, so give it a second chance before failing
         name: Set up Docker Buildx
+        id: setup_buildx
+        continue-on-error: true
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+      -
+        name: Set up Docker Buildx (retry)
+        if: ${{ steps.setup_buildx.outcome == 'failure' }}
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
           driver-opts: |
@@ -87,7 +98,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       -
+        # transient failures (e.g., network errors downloading dependencies or pushing to the
+        #   registry) are retried once below; a second failure fails the job
         name: Build and push
+        id: build_push
+        continue-on-error: true
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
@@ -107,6 +122,52 @@ jobs:
           provenance: false
           platforms: ${{ matrix.platform }}
           tags: ghcr.io/${{ github.repository_owner }}/malcolm/${{ inputs.service }}:${{ steps.extract_branch.outputs.branch }}${{ steps.arch_tag_suffix.outputs.archtag }}
+      -
+        name: Wait before retrying build
+        if: ${{ steps.build_push.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning title=Build failed::Building ${{ inputs.service }} for ${{ matrix.platform }} failed, retrying in 60 seconds"
+          docker buildx du || true
+          sleep 60
+      -
+        name: Build and push (retry)
+        if: ${{ steps.build_push.outcome == 'failure' }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          build-args: |
+            TARGETPLATFORM=${{ matrix.platform }}
+            MALCOLM_VERSION=${{ steps.extract_malcolm_version.outputs.mversion }}
+            BUILD_DATE=${{ steps.generate_build_timestamp.outputs.btimestamp }}
+            VCS_REVISION=${{ steps.extract_commit_sha.outputs.sha }}
+            ${{ inputs.extra_build_args || '' }}
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            ${{ secrets.maxmind_account_id && format('MAXMIND_GEOIP_DB_ACCOUNT_ID={0}', secrets.maxmind_account_id) || '' }}
+            ${{ secrets.maxmind_license_key && format('MAXMIND_GEOIP_DB_LICENSE_KEY={0}', secrets.maxmind_license_key) || '' }}
+            ${{ secrets.maxmind_alternate_url && format('MAXMIND_GEOIP_DB_ALTERNATE_DOWNLOAD_URL={0}', secrets.maxmind_alternate_url) || '' }}
+          push: true
+          provenance: false
+          platforms: ${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository_owner }}/malcolm/${{ inputs.service }}:${{ steps.extract_branch.outputs.branch }}${{ steps.arch_tag_suffix.outputs.archtag }}
+      -
+        name: Verify pushed image
+        shell: bash
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository_owner }}/malcolm/${{ inputs.service }}:${{ steps.extract_branch.outputs.branch }}${{ steps.arch_tag_suffix.outputs.archtag }}
+        run: |
+          set -euo pipefail
+          for ATTEMPT in 1 2 3; do
+            if docker buildx imagetools inspect "${IMAGE_REF}"; then
+              exit 0
+            fi
+            echo "Unable to inspect ${IMAGE_REF} (attempt ${ATTEMPT}), retrying..."
+            sleep 10
+          done
+          echo "::error title=Image not found::${IMAGE_REF} was not found in the registry after the build reported success"
+          exit 1
       -
         name: Run Trivy vulnerability scanner
         if: ${{ matrix.platform == 'linux/amd64' }}

@@ -67,6 +67,16 @@ local path_role_envs = {
         "ROLE_READ_ACCESS"
     }},
 
+    -- Arkime Cont3xt and Parliament (Parliament itself requires its parliamentAdmin role for changes)
+    { pattern = "^/(cont3xt|parliament)", roles = {
+        "ROLE_ADMIN",
+        "ROLE_ARKIME_ADMIN",
+        "ROLE_ARKIME_READ_ACCESS",
+        "ROLE_ARKIME_READ_WRITE_ACCESS",
+        "ROLE_READ_ACCESS",
+        "ROLE_READ_WRITE_ACCESS"
+    }},
+
     -- Upload endpoints
     { pattern = "^/(server/php|upload)", roles = {
         "ROLE_ADMIN",
@@ -136,7 +146,7 @@ local path_role_envs = {
 --   For some other services (e.g., opensearch in roles_mapping.yml.orig) we are more explicit and just
 --   define all the roles, but this is a convenient way to avoid duplication.
 local uri_role_mappings = {
-    ["^/(arkime|iddash2ark|wise)"] = {
+    ["^/(arkime|iddash2ark|wise|cont3xt|parliament)"] = {
         { from = "ROLE_ADMIN", to = { "ROLE_ARKIME_ADMIN",
                                       "ROLE_ARKIME_READ_WRITE_ACCESS",
                                       "ROLE_ARKIME_PCAP_ACCESS",

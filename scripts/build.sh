@@ -107,6 +107,28 @@ if (( ${#DOCKER_COMPOSE_BIN[@]} == 0 )); then
   exit 1
 fi
 
+# Docker Compose delegates image builds to buildx (BuildKit), which is also required for the
+#   RUN --mount=type=secret/bind and ADD --chmod features used by Malcolm's Dockerfiles
+if ! BUILDX_VERSION="$($DOCKER_BIN buildx version 2>&1)"; then
+  if [[ "$(basename "$DOCKER_BIN")" =~ ^docker(\.exe)?$ ]]; then
+    echo "Docker buildx is not installed, or not runable as this user:" >&2
+    echo "  ${BUILDX_VERSION}" >&2
+    echo "Install the buildx plugin (e.g., the docker-buildx-plugin package) and try again." >&2
+    exit 1
+  else
+    echo "Warning: \"$DOCKER_BIN buildx\" is unavailable; relying on ${DOCKER_COMPOSE_BIN[*]} to build images." >&2
+  fi
+else
+  echo "Using ${BUILDX_VERSION}"
+  # make sure the active builder is actually usable before kicking off a long build
+  if ! BUILDX_INSPECT="$($DOCKER_BIN buildx inspect --bootstrap 2>&1)"; then
+    echo "The active docker buildx builder could not be started:" >&2
+    echo "${BUILDX_INSPECT}" | sed 's/^/  /' >&2
+    echo "Check \"$DOCKER_BIN buildx ls\" and select a working builder with \"$DOCKER_BIN buildx use <name>\" (or \"$DOCKER_BIN buildx use default\")." >&2
+    exit 1
+  fi
+fi
+
 unset CONFIRMATION
 read -p "Malcolm Docker images will now be built and/or pulled, force full clean (non-cached) rebuild [y/N]? " CONFIRMATION
 CONFIRMATION=${CONFIRMATION:-N}
@@ -116,6 +138,10 @@ TARGET_PLATFORM=linux/$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/
 BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 MALCOLM_VERSION="$($GREP -P "^\s+image:.*/malcolm/" "$CONFIG_FILE" | awk '{print $2}' | cut -d':' -f2 | uniq -c | sort -nr | awk '{print $2}' | head -n 1)"
 VCS_REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ -z "$MALCOLM_VERSION" ]]; then
+  echo "Unable to determine the Malcolm version from the image tags in \"$CONFIG_FILE\"" >&2
+  exit 1
+fi
 
 mkdir -p ./config
 pushd ./config >/dev/null 2>&1
@@ -163,6 +189,17 @@ BUILD_FLAGS=()
   --build-arg MALCOLM_VERSION="$MALCOLM_VERSION" \
   --build-arg VCS_REVISION="$VCS_REVISION" \
   "$@"
+BUILD_STATUS=$?
+if (( BUILD_STATUS != 0 )); then
+  # don't go on to validate images that may be stale or missing
+  echo "" >&2
+  echo "Image build failed (exit status $BUILD_STATUS) for: ${*:-all services}" >&2
+  echo "Review the build output above for the failing step. Common causes include network" >&2
+  echo "  failures while downloading dependencies, insufficient disk space (see" >&2
+  echo "  \"$DOCKER_BIN buildx du\" and \"$DOCKER_BIN buildx prune\"), or an unusable buildx builder" >&2
+  echo "  (see \"$DOCKER_BIN buildx ls\")." >&2
+  exit $BUILD_STATUS
+fi
 
 if (( $# == 0 )); then
   # if we built *all* the images, we're going to do some validation that some things got pulled/built correctly

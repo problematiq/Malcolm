@@ -53,6 +53,18 @@ NGINX_HTADMIN_UPSTREAM_CONF=${NGINX_CONF_DIR}/nginx_htadmin_upstream.conf
 NGINX_ARKIME_WISE_LINK=${NGINX_CONF_DIR}/nginx_arkime_wise_rt.conf
 NGINX_ARKIME_WISE_CONF=${NGINX_CONF_DIR}/nginx_arkime_wise.conf
 
+# "include" files for Arkime Cont3xt if enabled (the upstream file is generated below)
+NGINX_ARKIME_CONT3XT_LINK=${NGINX_CONF_DIR}/nginx_arkime_cont3xt_rt.conf
+NGINX_ARKIME_CONT3XT_CONF=${NGINX_CONF_DIR}/nginx_arkime_cont3xt.conf
+NGINX_ARKIME_CONT3XT_UPSTREAM_LINK=${NGINX_CONF_DIR}/nginx_arkime_cont3xt_upstream_rt.conf
+NGINX_ARKIME_CONT3XT_UPSTREAM_CONF=${NGINX_CONF_DIR}/nginx_arkime_cont3xt_upstream.conf
+
+# "include" files for Arkime Parliament if enabled (the upstream file is generated below)
+NGINX_ARKIME_PARLIAMENT_LINK=${NGINX_CONF_DIR}/nginx_arkime_parliament_rt.conf
+NGINX_ARKIME_PARLIAMENT_CONF=${NGINX_CONF_DIR}/nginx_arkime_parliament.conf
+NGINX_ARKIME_PARLIAMENT_UPSTREAM_LINK=${NGINX_CONF_DIR}/nginx_arkime_parliament_upstream_rt.conf
+NGINX_ARKIME_PARLIAMENT_UPSTREAM_CONF=${NGINX_CONF_DIR}/nginx_arkime_parliament_upstream.conf
+
 # "include" file for auth_ldap, prompt, and "auth_ldap_servers" name
 NGINX_LDAP_AUTH_CONF=${NGINX_CONF_DIR}/nginx_auth_ldap.conf
 
@@ -723,6 +735,13 @@ if [[ -f "${NGINX_LANDING_INDEX_HTML}" ]]; then
     NETBOX_DESC="Model and document your <a href=\"/readme/docs/asset-interaction-analysis.html\">network infrastructure</a>"
     NETBOX_LINK="/netbox/"
   fi
+  if [[ "${ARKIME_CONT3XT_ENABLED:-false}" == "true" ]]; then
+    CONT3XT_DESC="Gather <a href=\"/readme/docs/arkime.html#ArkimeParliamentCont3xt\">context</a> on IP addresses, domains, hashes and other indicators"
+    CONT3XT_LINK="/cont3xt/"
+  else
+    CONT3XT_DESC="<a href=\"/readme/docs/arkime.html#ArkimeParliamentCont3xt\">Cont3xt</a> is not enabled"
+    CONT3XT_LINK="/readme/docs/arkime.html#ArkimeParliamentCont3xt"
+  fi
   for HTML in "$(dirname "$(realpath "${NGINX_LANDING_INDEX_HTML}")")"/*.html; do
     sed -i "s@MALCOLM_DASHBOARDS_NAME_REPLACER@${MALCOLM_DASHBOARDS_NAME}@g" "${HTML}" || true
     sed -i "s@MALCOLM_DASHBOARDS_URL_REPLACER@${MALCOLM_DASHBOARDS_URL}@g" "${HTML}" || true
@@ -734,6 +753,8 @@ if [[ -f "${NGINX_LANDING_INDEX_HTML}" ]]; then
     sed -i "s@MALCOLM_NETBOX_TITLE_REPLACER@${NETBOX_TITLE}@g" "${HTML}" || true
     sed -i "s@MALCOLM_NETBOX_DESC_REPLACER@${NETBOX_DESC}@g" "${HTML}" || true
     sed -i "s@MALCOLM_NETBOX_URL_REPLACER@${NETBOX_LINK}@g" "${HTML}" || true
+    sed -i "s@MALCOLM_CONT3XT_DESC_REPLACER@${CONT3XT_DESC}@g" "${HTML}" || true
+    sed -i "s@MALCOLM_CONT3XT_URL_REPLACER@${CONT3XT_LINK}@g" "${HTML}" || true
   done
 fi
 
@@ -741,6 +762,30 @@ if [[ "${ARKIME_EXPOSE_WISE_GUI:-true}"  == "true" ]]; then
   ln -sf "$NGINX_ARKIME_WISE_CONF" "$NGINX_ARKIME_WISE_LINK"
 else
   ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_WISE_LINK"
+fi
+
+# Arkime Cont3xt runs in its own container (the Arkime image in "cont3xt" mode), which
+#   must be reachable at ARKIME_CONT3XT_HOST (default arkime-cont3xt) on ARKIME_CONT3XT_PORT
+if [[ "${ARKIME_CONT3XT_ENABLED:-false}" == "true" ]]; then
+  printf 'upstream cont3xt {\n  server %s:%s;\n}\n' \
+    "${ARKIME_CONT3XT_HOST:-arkime-cont3xt}" "${ARKIME_CONT3XT_PORT:-3218}" > "$NGINX_ARKIME_CONT3XT_UPSTREAM_CONF"
+  ln -sf "$NGINX_ARKIME_CONT3XT_UPSTREAM_CONF" "$NGINX_ARKIME_CONT3XT_UPSTREAM_LINK"
+  ln -sf "$NGINX_ARKIME_CONT3XT_CONF" "$NGINX_ARKIME_CONT3XT_LINK"
+else
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_CONT3XT_UPSTREAM_LINK"
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_CONT3XT_LINK"
+fi
+
+# Arkime Parliament runs in its own container (the Arkime image in "parliament" mode), which
+#   must be reachable at ARKIME_PARLIAMENT_HOST (default arkime-parliament) on ARKIME_PARLIAMENT_PORT
+if [[ "${ARKIME_PARLIAMENT_ENABLED:-false}" == "true" ]]; then
+  printf 'upstream parliament {\n  server %s:%s;\n}\n' \
+    "${ARKIME_PARLIAMENT_HOST:-arkime-parliament}" "${ARKIME_PARLIAMENT_PORT:-8008}" > "$NGINX_ARKIME_PARLIAMENT_UPSTREAM_CONF"
+  ln -sf "$NGINX_ARKIME_PARLIAMENT_UPSTREAM_CONF" "$NGINX_ARKIME_PARLIAMENT_UPSTREAM_LINK"
+  ln -sf "$NGINX_ARKIME_PARLIAMENT_CONF" "$NGINX_ARKIME_PARLIAMENT_LINK"
+else
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_PARLIAMENT_UPSTREAM_LINK"
+  ln -sf "$NGINX_BLANK_CONF" "$NGINX_ARKIME_PARLIAMENT_LINK"
 fi
 
 # some cleanup, if necessary
